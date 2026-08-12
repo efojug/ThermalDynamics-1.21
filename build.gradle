@@ -1,0 +1,211 @@
+plugins {
+    id 'java'
+    id 'maven-publish'
+
+    id 'com.github.johnrengelman.shadow' version '7.1.2'
+    id 'com.matthewprenger.cursegradle' version '1.4.0'
+    id 'com.modrinth.minotaur' version "2.+"
+
+    id 'net.neoforged.gradle.userdev' version '7.0.97'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+    withSourcesJar()
+    // withJavadocJar()
+}
+
+sourceSets.main.resources.srcDirs += "src/main/generated"
+
+group = 'com.teamcofh'
+base {
+    archivesName = "${mod_id}"
+}
+
+def buildVersion = "${mod_version}." + (System.getenv("BUILD_NUMBER") ?: '0')
+version = "${mc_version}-${buildVersion}"
+println "Starting build of ${archivesBaseName}, Version: ${mod_version}"
+println "Using NeoForge: ${neo_version}, for Minecraft: ${mc_version}"
+
+minecraft {
+    accessTransformers.file file("src/main/resources/META-INF/accesstransformer.cfg")
+}
+
+if (System.getenv('CURSEFORGE_KEY') || project.hasProperty('curseforgeKey')) {
+    println "Enabling CurseForge config."
+    tasks.named('curseforge').configure { dependsOn(jar) }
+
+    curseforge {
+        apiKey = System.getenv("CURSEFORGE_KEY") ?: project.findProperty("curseforgeKey")
+
+        project {
+            id = '227443'
+            changelogType = 'markdown'
+            changelog = "[Changelog on GitHub - ${version}](https://raw.githubusercontent.com/cofh/version/main/${mod_id}/changelog.md)"
+            releaseType = "${release_type}"
+            mainArtifact(shadowJar)
+            addGameVersion "Java ${java_version}"
+            addGameVersion "${mc_version}"
+        }
+    }
+}
+
+if (System.getenv('MODRINTH_TOKEN') || project.hasProperty('modrinthToken')) {
+    println "Enabling Modrinth config."
+    tasks.named('modrinth').configure { dependsOn(jar) }
+
+    modrinth {
+        token = System.getenv("MODRINTH_TOKEN") ?: project.findProperty("modrinthToken")
+        projectId = 't8bmWGI2'
+        versionNumber = "${mod_version}"
+        versionType = "${release_type}"
+        changelog = "[Changelog on GitHub - ${version}](https://raw.githubusercontent.com/cofh/version/main/${mod_id}/changelog.md)"
+        uploadFile = shadowJar
+        gameVersions = ["${mc_version}"]
+    }
+}
+
+processResources {
+    filesMatching('META-INF/mods.toml') {
+        expand 'file': ['jarVersion': mod_version],
+                'mc_version': mc_version,
+                'neo_version': neo_version,
+                'lang_version': neo_version.split('\\.')[0],
+                'cofh_core_version_range': "[${cofh_core_version.replace(".+", "")},${cofh_core_max_version})",
+                'thermal_core_version_range': "[${thermal_core_version.replace(".+", "")},${thermal_core_max_version})"
+    }
+}
+
+configurations {
+    shadow
+    implementation.extendsFrom shadow
+}
+
+repositories {
+    mavenLocal()
+    maven { url 'https://maven.covers1624.net/' }
+    maven { url 'https://maven.blamejared.com/' }
+    maven { url 'https://maven.theillusivec4.top/' }
+}
+
+dependencies {
+    implementation("net.neoforged:neoforge:${neo_version}")
+
+    implementation("com.teamcofh:cofh_core:${mc_version}-${cofh_core_version}+")
+    implementation("com.teamcofh:thermal_core:${mc_version}-${thermal_core_version}+")
+
+    shadow("net.covers1624:Quack:0.4.10.105")
+
+    compileOnly("org.jetbrains:annotations:22.0.0")
+
+    testImplementation("org.junit.jupiter:junit-jupiter-api:5.8.2")
+    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.8.2")
+}
+
+test {
+    useJUnitPlatform()
+}
+
+def commonManifest = {
+    attributes([
+            'Specification-Title'     : "${mod_name}",
+            'Specification-Vendor'    : 'Team CoFH',
+            'Specification-Version'   : "${mc_version}",
+            'Implementation-Title'    : "${mod_id}",
+            'Implementation-Vendor'   : 'Team CoFH',
+            'Implementation-Version'  : "${mod_version}",
+            'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+    ])
+}
+
+jar.enabled = false
+shadowJar {
+    finalizedBy 'signShadowJar'
+    archiveClassifier = 'universal'
+    manifest commonManifest
+
+    configurations = [project.configurations.shadow]
+    relocate 'net.covers1624.quack', 'cofh.requack'
+}
+
+tasks.register("signShadowJar") {
+    dependsOn("shadowJar")
+
+    doFirst {
+        def args = [:]
+        args['jar'] = jar.archiveFile.get().asFile
+        if (System.getenv("KEY_STORE")) {
+            args['keyStore'] = System.getenv("KEY_STORE")
+            file(System.getenv("KEY_STORE_PROPS")).withReader {
+                def props = new Properties()
+                props.load(it)
+                args.addAll(props)
+            }
+        } else if (project.hasProperty('keyStore')) {
+            args['keyStore'] = project.getProperty('keyStore')
+            args['alias'] = project.getProperty('keyStoreAlias')
+            args['storePass'] = project.getProperty('keyStorePass')
+            args['keyPass'] = project.getProperty('keyStoreKeyPass')
+        } else {
+            println "No signing properties."
+            state.setOutcome(org.gradle.api.internal.tasks.TaskExecutionOutcome.UP_TO_DATE)
+            didWork = false
+            return
+        }
+        project.ant.invokeMethod('signjar', args)
+    }
+}
+
+publishing {
+    repositories {
+        if (System.getenv('MAVEN_PASS')) {
+            maven {
+                url 'https://nexus.covers1624.net/repository/cofh-releases/'
+                credentials {
+                    username 'kinglemming'
+                    password System.getenv('MAVEN_PASS')
+                }
+            }
+        }
+    }
+    publications {
+        mod(MavenPublication) {
+            groupId project.group
+            artifactId project.archivesBaseName
+            version project.version
+            artifact shadowJar
+            artifact sourcesJar
+
+            pom {
+                name = archivesBaseName
+                description = archivesBaseName
+                url = "https://github.com/CoFH/${project.name}"
+                scm {
+                    url = "https://github.com/CoFH/${project.name}"
+                    connection = "scm:git:git://github.com/CoFH/${project.name}.git"
+                    connection = "scm:git:git@github.com:CoFH/${project.name}.git"
+                }
+
+                issueManagement {
+                    system = 'discord'
+                    url = 'https://discord.gg/uRKrnbH'
+                }
+                licenses {
+                    license {
+                        name = 'Don\'t Be a Jerk v2'
+                        url = "https://github.com/CoFH/${project.name}/blob/main/README.md"
+                        distribution = 'repo'
+                    }
+                }
+                developers {
+                    developer {
+                        id = 'teamcofh'
+                        name = 'Team CoFH'
+                    }
+                }
+            }
+        }
+    }
+}
