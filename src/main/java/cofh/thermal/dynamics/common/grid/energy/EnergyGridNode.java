@@ -53,37 +53,54 @@ public class EnergyGridNode extends GridNode<EnergyGrid> implements ITickableGri
         if (!cached) {
             cacheConnections();
         }
-        IDuct<?, ?> duct = gridHost();
-
-        if (duct != null && distArray.length > 0) {
-            ++distIndex;
-            distIndex %= distArray.length;
-            Level world = getWorld();
-
-            for (int i = distIndex; i < distArray.length; ++i) {
-                tickDir(world, pos, duct, distArray[i]);
-            }
-            for (int i = 0; i < distIndex; ++i) {
-                tickDir(world, pos, duct, distArray[i]);
-            }
-        }
     }
 
-    private void tickDir(Level world, BlockPos pos, IDuct<?, ?> duct, Direction dir) {
+    public int transmitEnergy(int energy, boolean simulate) {
+
+        if (!cached) {
+            cacheConnections();
+        }
+        if (energy <= 0 || distArray.length == 0) {
+            return 0;
+        }
+        IDuct<?, ?> duct = gridHost();
+        if (duct == null) {
+            return 0;
+        }
+        int tempIndex = distIndex;
+        ++distIndex;
+        distIndex %= distArray.length;
+        Level world = getWorld();
+
+        int accepted = 0;
+        for (int i = distIndex; i < distArray.length && accepted < energy; ++i) {
+            accepted += transmitEnergyDir(world, pos, duct, distArray[i], energy - accepted, simulate);
+        }
+        for (int i = 0; i < distIndex && accepted < energy; ++i) {
+            accepted += transmitEnergyDir(world, pos, duct, distArray[i], energy - accepted, simulate);
+        }
+        if (simulate) {
+            distIndex = tempIndex;
+        }
+        return accepted;
+    }
+
+    private int transmitEnergyDir(Level world, BlockPos pos, IDuct<?, ?> duct, Direction dir, int amount, boolean simulate) {
 
         if (duct.getConnectionType(dir) == DISABLED) {
-            return;
+            return 0;
         }
         IAttachment attachment = duct.getAttachment(dir);
         BlockEntity tile = world.getBlockEntity(pos.relative(dir));
         if (tile == null) {
-            return;
+            return 0;
         }
         IEnergyStorage storage = attachment.wrapExternalCapability(Capabilities.EnergyStorage.BLOCK,
                 world.getCapability(Capabilities.EnergyStorage.BLOCK, tile.getBlockPos(), tile.getBlockState(), tile, dir.getOpposite()));
-        if (storage != null) {
-            grid.extractEnergy(storage.receiveEnergy(grid.getEnergyStored(), false), false);
+        if (storage == null) {
+            return 0;
         }
+        return storage.receiveEnergy(amount, simulate);
     }
 
 }

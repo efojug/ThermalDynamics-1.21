@@ -44,6 +44,10 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
     protected FluidGridNode[] distArray = new FluidGridNode[0];
     protected int distIndex = 0;
 
+    protected FluidGridNode[] nodeList = new FluidGridNode[0];
+    protected int nodeTracker = 0;
+    protected boolean isSendingFluid = false;
+
     public FluidGrid(UUID id, Level world) {
 
         super(FLUID_GRID.get(), id, world);
@@ -136,6 +140,7 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
     public void onModified() {
 
         distArray = new FluidGridNode[0];
+        nodeList = new FluidGridNode[0];
         storage.setBaseCapacity(Math.max(TANK_MEDIUM, getNodes().size() * NODE_CAPACITY));
         super.onModified();
     }
@@ -222,7 +227,7 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
     public <T, C> T getCapability(BlockCapability<T, C> capability) {
 
         if (capability == Capabilities.FluidHandler.BLOCK) {
-            return (T) storage;
+            return (T) this;
         }
         return null;
     }
@@ -249,10 +254,57 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
 
     @Override public int getTanks() { return storage.getTanks(); }
     @Override public FluidStack getFluidInTank(int tank) { return storage.getFluidInTank(tank); }
-    @Override public int fill(FluidStack resource, FluidAction action) { return storage.fill(resource, action); }
     @Override public FluidStack drain(FluidStack resource, FluidAction action) { return storage.drain(resource, action); }
     @Override public FluidStack drain(int maxDrain, FluidAction action) { return storage.drain(maxDrain, action); }
     @Override public int getTankCapacity(int tank) { return storage.getTankCapacity(tank); }
     @Override public boolean isFluidValid(int tank, @Nonnull FluidStack stack) { return storage.isFluidValid(tank, stack); }
     //@formatter:on
+
+    @Override
+    public int fill(FluidStack resource, FluidAction action) {
+
+        if (resource.isEmpty() || isSendingFluid || (!storage.getFluid().isEmpty() && !FluidStack.isSameFluidSameComponents(storage.getFluid(), resource))) {
+            return 0;
+        }
+        int added = storage.fill(resource, action);
+        int overflow = resource.getAmount() - added;
+        if (overflow <= 0) {
+            return added;
+        }
+        FluidGridNode[] list = nodeList;
+        if (list.length != getNodes().size()) {
+            list = getNodes().values().toArray(new FluidGridNode[0]);
+            nodeList = list;
+            nodeTracker = 0;
+        }
+        if (list.length == 0) {
+            return added;
+        }
+        int tempTracker = nodeTracker;
+        int toSend = overflow;
+        isSendingFluid = true;
+        for (int i = nodeTracker; i < list.length && toSend > 0; ++i) {
+            toSend -= list[i].transmitFluid(resource.copyWithAmount(toSend), action.simulate());
+            if (toSend == 0) {
+                nodeTracker = i + 1;
+            }
+        }
+        for (int i = 0; i < list.length && i < nodeTracker && toSend > 0; ++i) {
+            toSend -= list[i].transmitFluid(resource.copyWithAmount(toSend), action.simulate());
+            if (toSend == 0) {
+                nodeTracker = i + 1;
+            }
+        }
+        if (toSend > 0) {
+            ++nodeTracker;
+        }
+        if (nodeTracker >= list.length) {
+            nodeTracker = 0;
+        }
+        if (action.simulate()) {
+            nodeTracker = tempTracker;
+        }
+        isSendingFluid = false;
+        return added + (overflow - toSend);
+    }
 }

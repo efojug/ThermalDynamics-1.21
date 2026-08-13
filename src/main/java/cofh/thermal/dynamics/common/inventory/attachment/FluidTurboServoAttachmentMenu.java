@@ -104,7 +104,6 @@ public class FluidTurboServoAttachmentMenu extends AttachmentMenu implements IFi
         for (int i = 0; i < size; ++i) {
             FluidStack.OPTIONAL_STREAM_CODEC.encode((RegistryFriendlyByteBuf) buffer, getFilterStacks().get(i));
         }
-        buffer.writeInt(attachment.amountTransfer);
 
         return buffer;
     }
@@ -118,8 +117,6 @@ public class FluidTurboServoAttachmentMenu extends AttachmentMenu implements IFi
             fluidStacks.add(FluidStack.OPTIONAL_STREAM_CODEC.decode((RegistryFriendlyByteBuf) buffer));
         }
         filterInventory.readFromSource(fluidStacks);
-
-        attachment.amountTransfer = buffer.readInt();
     }
     // endregion
 

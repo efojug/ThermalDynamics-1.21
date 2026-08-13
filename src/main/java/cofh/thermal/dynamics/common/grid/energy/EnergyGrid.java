@@ -5,8 +5,6 @@ import cofh.lib.common.energy.IRedstoneFluxStorage;
 import cofh.thermal.dynamics.api.helper.GridHelper;
 import cofh.thermal.dynamics.common.grid.Grid;
 import net.minecraft.core.Direction;
-import net.minecraft.core.HolderLookup;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.capabilities.BlockCapability;
@@ -23,17 +21,16 @@ import static cofh.thermal.dynamics.init.registries.TDynGrids.ENERGY_GRID;
  */
 public class EnergyGrid extends Grid<EnergyGrid, EnergyGridNode> implements IRedstoneFluxStorage {
 
-    protected static final long MIN_CAPACITY = 10000;
-    protected static final long NODE_CAPACITY = 400;
+    protected final EnergyGridStorage storage;
 
-    protected final EnergyGridStorage storage = new EnergyGridStorage(NODE_CAPACITY);
-
-    protected EnergyGridNode[] distArray = new EnergyGridNode[0];
-    protected int distIndex = 0;
+    protected EnergyGridNode[] nodeList = new EnergyGridNode[0];
+    protected int nodeTracker = 0;
+    protected boolean isSendingEnergy = false;
 
     public EnergyGrid(UUID id, Level world) {
 
         super(ENERGY_GRID.get(), id, world);
+        storage = new EnergyGridStorage(this);
     }
 
     @Override
@@ -45,62 +42,22 @@ public class EnergyGrid extends Grid<EnergyGrid, EnergyGridNode> implements IRed
     @Override
     public void tick() {
 
-        storage.tick();
+        super.tick();
 
-        if (distArray.length != getNodes().size()) {
-            distArray = getNodes().values().toArray(new EnergyGridNode[0]);
+        if (nodeList.length != getNodes().size()) {
+            nodeList = getNodes().values().toArray(new EnergyGridNode[0]);
         }
-        int curIndex = distIndex;
-
-        if (distIndex >= distArray.length) {
-            distIndex = 0;
-        }
-        for (int i = distIndex; i < distArray.length; ++i) {
-            if (rrNodeTick(curIndex, i)) {
-                storage.postTick();
-                return;
-            }
-        }
-        for (int i = 0; i < distIndex; ++i) {
-            if (rrNodeTick(curIndex, i)) {
-                storage.postTick();
-                return;
-            }
-        }
-        ++distIndex;
-        storage.postTick();
-    }
-
-    private boolean rrNodeTick(int curIndex, int i) {
-
-        if (!distArray[i].isLoaded()) {
-            return false;
-        }
-        distArray[i].distributionTick();
-        if (getEnergy() <= 0) {
-            distIndex = i + 1;
-            if (curIndex == distIndex) {
-                --distIndex;
-            }
-            return true;
-        }
-        return false;
     }
 
     @Override
     public void onModified() {
 
-        distArray = new EnergyGridNode[0];
-        storage.setBaseCapacity(Math.max(MIN_CAPACITY, getNodes().size() * NODE_CAPACITY));
+        nodeList = new EnergyGridNode[0];
         super.onModified();
     }
 
     @Override
     public void onMerge(EnergyGrid from) {
-
-        storage.setBaseCapacity(Math.max(MIN_CAPACITY, getNodes().size() * NODE_CAPACITY));
-        storage.setCapacity(this.getCapacity() + from.getCapacity());
-        storage.setEnergy(storage.getEnergy() + from.getEnergy());
 
         refreshCapabilities();
         from.refreshCapabilities();
@@ -109,42 +66,10 @@ public class EnergyGrid extends Grid<EnergyGrid, EnergyGridNode> implements IRed
     @Override
     public void onSplit(List<EnergyGrid> others) {
 
-        int totalNodes = 0;
         for (EnergyGrid grid : others) {
-            int gridNodes = grid.getNodes().size();
-            totalNodes += grid.getNodes().size();
-            grid.setBaseCapacity(Math.max(MIN_CAPACITY, gridNodes * NODE_CAPACITY));
-            grid.setCapacity(this.getCapacity());
             grid.refreshCapabilities();
         }
         this.refreshCapabilities();
-        if (getEnergy() <= 0) {
-            return;
-        }
-        long energyPerNode = getEnergy() / totalNodes;
-        long remEnergy = getEnergy() % totalNodes;
-
-        for (EnergyGrid grid : others) {
-            int gridNodes = grid.getNodes().size();
-            grid.setEnergy(energyPerNode * gridNodes);
-        }
-        // First grid gets the extra. Why? Because there's always a first grid.
-        others.get(0).setEnergy(others.get(0).getEnergy() + remEnergy);
-    }
-
-    @Override
-    public @org.jetbrains.annotations.UnknownNullability CompoundTag serializeNBT(HolderLookup.Provider provider) {
-
-        CompoundTag tag = super.serializeNBT(provider);
-        storage.write(tag);
-        return tag;
-    }
-
-    @Override
-    public void deserializeNBT(HolderLookup.Provider provider, CompoundTag nbt) {
-
-        super.deserializeNBT(provider, nbt);
-        storage.deserializeNBT(provider, nbt);
     }
 
     @Override
@@ -177,18 +102,74 @@ public class EnergyGrid extends Grid<EnergyGrid, EnergyGridNode> implements IRed
         }
     }
 
-    //@formatter:off
-    public long getCapacity() { return storage.getCapacity(); }
-    public long getEnergy() { return storage.getEnergy(); }
-    public void setBaseCapacity(long capacity) { storage.setBaseCapacity(capacity); }
-    public void setCapacity(long capacity) { storage.setCapacity(capacity); }
-    public void setEnergy(long energy) { storage.setEnergy(energy); }
+    // region IEnergyStorage
+    @Override
+    public int receiveEnergy(int maxReceive, boolean simulate) {
 
-    @Override public int receiveEnergy(int maxReceive, boolean simulate) { return storage.receiveEnergy(maxReceive, simulate); }
-    @Override public int extractEnergy(int maxExtract, boolean simulate) { return storage.extractEnergy(maxExtract, simulate); }
-    @Override public int getEnergyStored() { return storage.getEnergyStored(); }
-    @Override public int getMaxEnergyStored() { return storage.getMaxEnergyStored(); }
-    @Override public boolean canExtract() { return storage.canExtract(); }
-    @Override public boolean canReceive() { return storage.canReceive(); }
-    //@formatter:on
+        if (isSendingEnergy) {
+            return 0;
+        }
+        int tempTracker = nodeTracker;
+        EnergyGridNode[] list = nodeList;
+        if (list.length == 0) {
+            return 0;
+        }
+        int energy = maxReceive;
+        isSendingEnergy = true;
+
+        for (int i = nodeTracker; i < list.length && energy > 0; i++) {
+            energy -= list[i].transmitEnergy(energy, simulate);
+            if (energy == 0) {
+                nodeTracker = i + 1;
+            }
+        }
+        for (int i = 0; i < list.length && i < nodeTracker && energy > 0; i++) {
+            energy -= list[i].transmitEnergy(energy, simulate);
+            if (energy == 0) {
+                nodeTracker = i + 1;
+            }
+        }
+        if (energy > 0) {
+            ++nodeTracker;
+        }
+        if (nodeTracker >= list.length) {
+            nodeTracker = 0;
+        }
+        if (simulate) {
+            nodeTracker = tempTracker;
+        }
+        isSendingEnergy = false;
+        return maxReceive - energy;
+    }
+
+    @Override
+    public int extractEnergy(int maxExtract, boolean simulate) {
+
+        return 0;
+    }
+
+    @Override
+    public int getEnergyStored() {
+
+        return 0;
+    }
+
+    @Override
+    public int getMaxEnergyStored() {
+
+        return Integer.MAX_VALUE;
+    }
+
+    @Override
+    public boolean canExtract() {
+
+        return false;
+    }
+
+    @Override
+    public boolean canReceive() {
+
+        return true;
+    }
+    // endregion
 }

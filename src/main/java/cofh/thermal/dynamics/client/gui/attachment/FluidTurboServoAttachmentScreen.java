@@ -6,7 +6,6 @@ import cofh.core.client.gui.element.panel.RSControlPanel;
 import cofh.core.util.helpers.GuiHelper;
 import cofh.thermal.dynamics.common.attachment.FluidTurboServoAttachment;
 import cofh.thermal.dynamics.common.inventory.attachment.FluidTurboServoAttachmentMenu;
-import cofh.thermal.dynamics.common.network.packet.server.AttachmentConfigPacket;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -18,16 +17,12 @@ import static cofh.lib.util.Constants.PATH_GUI;
 import static cofh.lib.util.constants.ModIds.ID_COFH_CORE;
 import static cofh.lib.util.constants.ModIds.ID_THERMAL;
 import static cofh.lib.util.helpers.SoundHelper.playClickSound;
-import static cofh.lib.util.helpers.StringHelper.format;
 
 public class FluidTurboServoAttachmentScreen extends ContainerScreenCoFH<FluidTurboServoAttachmentMenu> {
 
     public static final ResourceLocation TEXTURE = ResourceLocation.parse(PATH_GUI + "generic.png");
 
     public static final String TEX_EXTRACT = ID_THERMAL + ":textures/gui/elements/info_extract_to_fluid_grid.png";
-
-    public static final String TEX_INCREMENT = ID_COFH_CORE + ":textures/gui/elements/button_increment.png";
-    public static final String TEX_DECREMENT = ID_COFH_CORE + ":textures/gui/elements/button_decrement.png";
 
     public static final String TEX_DENY_LIST = PATH_GUI + "filters/filter_deny_list.png";
     public static final String TEX_ALLOW_LIST = PATH_GUI + "filters/filter_allow_list.png";
@@ -68,10 +63,6 @@ public class FluidTurboServoAttachmentScreen extends ContainerScreenCoFH<FluidTu
 
     @Override
     protected void renderLabels(GuiGraphics pGuiGraphics, int mouseX, int mouseY) {
-
-        String output = format(attachment.amountTransfer);
-
-        pGuiGraphics.drawString(font, output, getCenteredOffset(output, 151), 42, 0x404040, false);
 
         super.renderLabels(pGuiGraphics, mouseX, mouseY);
     }
@@ -139,52 +130,6 @@ public class FluidTurboServoAttachmentScreen extends ContainerScreenCoFH<FluidTu
                 .setTooltipFactory(new SimpleTooltip(Component.translatable("info.cofh.filter.checkNBT.1")))
                 .setVisible(() -> menu.getCheckNBT()));
 
-        ElementBase decTransfer = new ElementButton(this, 136, 56) {
-
-            @Override
-            public boolean mouseClicked(double mouseX, double mouseY, int mouseButton) {
-
-                int change = getChangeAmount(mouseButton);
-                float pitch = getPitch(mouseButton);
-                pitch -= 0.1F;
-                playClickSound(pitch);
-
-                int curTransfer = attachment.amountTransfer;
-                attachment.amountTransfer -= change;
-                AttachmentConfigPacket.sendToServer(attachment);
-                attachment.amountTransfer = curTransfer;
-                return true;
-            }
-        }
-                .setTooltipFactory(GuiHelper::createDecControlTooltip)
-                .setSize(14, 14)
-                .setTexture(TEX_DECREMENT, 42, 14)
-                .setEnabled(() -> attachment.amountTransfer > 0);
-
-        ElementBase incTransfer = new ElementButton(this, 152, 56) {
-
-            @Override
-            public boolean mouseClicked(double mouseX, double mouseY, int mouseButton) {
-
-                int change = getChangeAmount(mouseButton);
-                float pitch = getPitch(mouseButton);
-                pitch += 0.1F;
-                playClickSound(pitch);
-
-                int curTransfer = attachment.amountTransfer;
-                attachment.amountTransfer += change;
-                AttachmentConfigPacket.sendToServer(attachment);
-                attachment.amountTransfer = curTransfer;
-                return true;
-            }
-        }
-                .setTooltipFactory(GuiHelper::createIncControlTooltip)
-                .setSize(14, 14)
-                .setTexture(TEX_INCREMENT, 42, 14)
-                .setEnabled(() -> attachment.amountTransfer < attachment.getMaxTransfer());
-
-        addElement(decTransfer);
-        addElement(incTransfer);
     }
     // endregion
 }
