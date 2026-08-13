@@ -261,7 +261,7 @@ public class EnergyLimiterAttachment implements IAttachment, IRedstoneControllab
         @Override
         public int getMaxEnergyStored() {
 
-            return wrappedStorage.getEnergyStored();
+            return wrappedStorage.getMaxEnergyStored();
         }
 
         @Override

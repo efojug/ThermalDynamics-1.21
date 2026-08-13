@@ -109,36 +109,43 @@ public class EnergyGrid extends Grid<EnergyGrid, EnergyGridNode> implements IRed
         if (isSendingEnergy) {
             return 0;
         }
-        int tempTracker = nodeTracker;
         EnergyGridNode[] list = nodeList;
+        if (list.length != getNodes().size()) {
+            list = getNodes().values().toArray(new EnergyGridNode[0]);
+            nodeList = list;
+            nodeTracker = 0;
+        }
         if (list.length == 0) {
             return 0;
         }
+        int tempTracker = nodeTracker;
         int energy = maxReceive;
         isSendingEnergy = true;
-
-        for (int i = nodeTracker; i < list.length && energy > 0; i++) {
-            energy -= list[i].transmitEnergy(energy, simulate);
-            if (energy == 0) {
-                nodeTracker = i + 1;
+        try {
+            for (int i = nodeTracker; i < list.length && energy > 0; i++) {
+                energy -= list[i].transmitEnergy(energy, simulate);
+                if (energy == 0) {
+                    nodeTracker = i + 1;
+                }
             }
-        }
-        for (int i = 0; i < list.length && i < nodeTracker && energy > 0; i++) {
-            energy -= list[i].transmitEnergy(energy, simulate);
-            if (energy == 0) {
-                nodeTracker = i + 1;
+            for (int i = 0; i < list.length && i < nodeTracker && energy > 0; i++) {
+                energy -= list[i].transmitEnergy(energy, simulate);
+                if (energy == 0) {
+                    nodeTracker = i + 1;
+                }
             }
+            if (energy > 0) {
+                ++nodeTracker;
+            }
+            if (nodeTracker >= list.length) {
+                nodeTracker = 0;
+            }
+            if (simulate) {
+                nodeTracker = tempTracker;
+            }
+        } finally {
+            isSendingEnergy = false;
         }
-        if (energy > 0) {
-            ++nodeTracker;
-        }
-        if (nodeTracker >= list.length) {
-            nodeTracker = 0;
-        }
-        if (simulate) {
-            nodeTracker = tempTracker;
-        }
-        isSendingEnergy = false;
         return maxReceive - energy;
     }
 

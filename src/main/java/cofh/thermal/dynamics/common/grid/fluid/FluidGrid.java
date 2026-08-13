@@ -283,28 +283,31 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
         int tempTracker = nodeTracker;
         int toSend = overflow;
         isSendingFluid = true;
-        for (int i = nodeTracker; i < list.length && toSend > 0; ++i) {
-            toSend -= list[i].transmitFluid(resource.copyWithAmount(toSend), action.simulate());
-            if (toSend == 0) {
-                nodeTracker = i + 1;
+        try {
+            for (int i = nodeTracker; i < list.length && toSend > 0; ++i) {
+                toSend -= list[i].transmitFluid(resource.copyWithAmount(toSend), action.simulate());
+                if (toSend == 0) {
+                    nodeTracker = i + 1;
+                }
             }
-        }
-        for (int i = 0; i < list.length && i < nodeTracker && toSend > 0; ++i) {
-            toSend -= list[i].transmitFluid(resource.copyWithAmount(toSend), action.simulate());
-            if (toSend == 0) {
-                nodeTracker = i + 1;
+            for (int i = 0; i < list.length && i < nodeTracker && toSend > 0; ++i) {
+                toSend -= list[i].transmitFluid(resource.copyWithAmount(toSend), action.simulate());
+                if (toSend == 0) {
+                    nodeTracker = i + 1;
+                }
             }
+            if (toSend > 0) {
+                ++nodeTracker;
+            }
+            if (nodeTracker >= list.length) {
+                nodeTracker = 0;
+            }
+            if (action.simulate()) {
+                nodeTracker = tempTracker;
+            }
+        } finally {
+            isSendingFluid = false;
         }
-        if (toSend > 0) {
-            ++nodeTracker;
-        }
-        if (nodeTracker >= list.length) {
-            nodeTracker = 0;
-        }
-        if (action.simulate()) {
-            nodeTracker = tempTracker;
-        }
-        isSendingFluid = false;
         return added + (overflow - toSend);
     }
 }

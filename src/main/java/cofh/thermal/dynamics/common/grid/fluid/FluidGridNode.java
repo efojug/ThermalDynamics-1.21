@@ -86,12 +86,18 @@ public class FluidGridNode extends GridNode<FluidGrid> implements ITickableGridN
         FluidAction action = simulate ? SIMULATE : EXECUTE;
         int amount = fluid.getAmount();
         int remaining = amount;
+        int tempIndex = distIndex;
+        ++distIndex;
+        distIndex %= distArray.length;
 
         for (int i = distIndex; i < distArray.length && remaining > 0; ++i) {
             remaining -= fillDir(world, pos, duct, distArray[i], fluid.copyWithAmount(remaining), action);
         }
         for (int i = 0; i < distIndex && remaining > 0; ++i) {
             remaining -= fillDir(world, pos, duct, distArray[i], fluid.copyWithAmount(remaining), action);
+        }
+        if (simulate) {
+            distIndex = tempIndex;
         }
         return amount - remaining;
     }
