@@ -3,7 +3,8 @@ package cofh.thermal.dynamics.common.event;
 import cofh.thermal.dynamics.api.grid.IGridContainer;
 import cofh.thermal.dynamics.common.grid.GridContainer;
 import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.event.TickEvent;
+import net.minecraft.server.level.ServerLevel;
+import net.neoforged.neoforge.event.tick.LevelTickEvent;
 import net.neoforged.neoforge.event.level.ChunkEvent;
 
 public class GridEvents {
@@ -15,20 +16,23 @@ public class GridEvents {
         NeoForge.EVENT_BUS.addListener(GridEvents::onChunkUnload);
     }
 
-    private static void onWorldTick(TickEvent.LevelTickEvent event) {
+    private static void onWorldTick(LevelTickEvent.Post event) {
 
-        if (event.side.isClient()) {
+        if (!(event.getLevel() instanceof ServerLevel level)) {
             return;
         }
-        IGridContainer gridContainer = IGridContainer.getGrid(event.level);
+        IGridContainer gridContainer = IGridContainer.getGrid(level);
         if (gridContainer != null) {
-            ((GridContainer) gridContainer).onWorldTick(event.phase);
+            ((GridContainer) gridContainer).onWorldTick();
         }
     }
 
     private static void onChunkLoad(ChunkEvent.Load event) {
 
-        IGridContainer gridContainer = IGridContainer.getGrid(event.getLevel());
+        if (!(event.getLevel() instanceof ServerLevel level)) {
+            return;
+        }
+        IGridContainer gridContainer = IGridContainer.getGrid(level);
         if (gridContainer != null) {
             ((GridContainer) gridContainer).onChunkLoad(event.getChunk());
         }
@@ -36,7 +40,10 @@ public class GridEvents {
 
     private static void onChunkUnload(ChunkEvent.Unload event) {
 
-        IGridContainer gridContainer = IGridContainer.getGrid(event.getLevel());
+        if (!(event.getLevel() instanceof ServerLevel level)) {
+            return;
+        }
+        IGridContainer gridContainer = IGridContainer.getGrid(level);
         if (gridContainer != null) {
             ((GridContainer) gridContainer).onChunkUnload(event.getChunk());
         }

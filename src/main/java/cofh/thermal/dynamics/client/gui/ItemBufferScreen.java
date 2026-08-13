@@ -19,7 +19,7 @@ import static cofh.lib.util.helpers.SoundHelper.playClickSound;
 public class ItemBufferScreen extends ContainerScreenCoFH<ItemBufferMenu> {
 
     public static final String TEX_PATH = ID_THERMAL + ":textures/gui/container/item_buffer.png";
-    public static final ResourceLocation TEXTURE = new ResourceLocation(TEX_PATH);
+    public static final ResourceLocation TEXTURE = ResourceLocation.parse(TEX_PATH);
 
     public static final String TEX_MODE_LATCH_OFF = ID_THERMAL + ":textures/gui/container/item_buffer_mode_normal.png";
     public static final String TEX_MODE_LATCH_ON = ID_THERMAL + ":textures/gui/container/item_buffer_mode_latch.png";

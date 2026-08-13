@@ -1,0 +1,32 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_duct": {
+      "conditions": {
+        "items": [
+          {
+            "items": "#thermal:ducts"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_the_recipe": {
+      "conditions": {
+        "recipe": "thermal:servo_attachment_2"
+      },
+      "trigger": "minecraft:recipe_unlocked"
+    }
+  },
+  "requirements": [
+    [
+      "has_the_recipe",
+      "has_duct"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "thermal:servo_attachment_2"
+    ]
+  }
+}

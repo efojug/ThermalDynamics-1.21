@@ -1,17 +1,16 @@
 package cofh.thermal.dynamics.common.network.packet.server;
 
+import cofh.lib.util.helpers.NetworkHelper;
 import cofh.thermal.dynamics.api.grid.IDuct;
 import cofh.thermal.dynamics.common.attachment.IPacketHandlerAttachment;
 import cofh.thermal.dynamics.common.network.data.server.AttachmentConfigPayload;
-import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.network.PacketDistributor;
-import net.neoforged.neoforge.network.handling.PlayPayloadContext;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-import java.util.Optional;
 
 public class AttachmentConfigPacket {
 
@@ -22,17 +21,16 @@ public class AttachmentConfigPacket {
         return INSTANCE;
     }
 
-    public void handle(final AttachmentConfigPayload payload, final PlayPayloadContext context) {
+    public void handle(final AttachmentConfigPayload payload, final IPayloadContext context) {
 
-        context.workHandler().submitAsync(() -> {
+        context.enqueueWork(() -> {
 
-            Optional<Player> senderOptional = context.player();
-            if (senderOptional.isEmpty()) {
+            Player player = context.player();
+            if (player == null) {
                 return;
             }
-            Player player = senderOptional.get();
 
-            Level world = player.level;
+            Level world = player.level();
             if (!world.isLoaded(payload.pos())) {
                 return;
             }
@@ -45,10 +43,10 @@ public class AttachmentConfigPacket {
 
     public static void sendToServer(IPacketHandlerAttachment attachment) {
 
-        if (attachment == null) {
+        if (attachment == null || attachment.world() == null) {
             return;
         }
-        PacketDistributor.SERVER.noArg().send(new AttachmentConfigPayload(attachment.pos(), attachment.side(), attachment.getConfigPacket(new FriendlyByteBuf(Unpooled.buffer()))));
+        PacketDistributor.sendToServer(new AttachmentConfigPayload(attachment.pos(), attachment.side(), attachment.getConfigPacket(NetworkHelper.createBuffer(attachment.world().registryAccess()))));
     }
 
 }

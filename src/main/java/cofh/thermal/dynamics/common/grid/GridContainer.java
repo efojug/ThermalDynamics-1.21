@@ -15,14 +15,15 @@ import io.netty.buffer.Unpooled;
 import net.covers1624.quack.collection.ColUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.saveddata.SavedData;
-import net.neoforged.neoforge.event.TickEvent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
@@ -60,10 +61,10 @@ public class GridContainer extends SavedData implements IGridContainer {
         this.world = world;
     }
 
-    private GridContainer(ServerLevel world, CompoundTag tag) {
+    private GridContainer(ServerLevel world, CompoundTag tag, HolderLookup.Provider provider) {
 
         this.world = world;
-        load(tag);
+        load(tag, provider);
     }
 
     public static GridContainer getInstance(ServerLevel level) {
@@ -71,7 +72,7 @@ public class GridContainer extends SavedData implements IGridContainer {
         return level.getDataStorage().computeIfAbsent(
                 new Factory<>(
                         () -> new GridContainer(level),
-                        t -> new GridContainer(level, t)
+                        (tag, provider) -> new GridContainer(level, tag, provider)
                 ),
                 ID_THERMAL_DYNAMICS + "_grids"
         );
@@ -430,11 +431,7 @@ public class GridContainer extends SavedData implements IGridContainer {
     }
 
     // region EVENT CALLBACKS
-    public void onWorldTick(TickEvent.Phase phase) {
-        // TODO do we want to pass this through to grids?
-        if (phase != TickEvent.Phase.END) {
-            return;
-        }
+    public void onWorldTick() {
         try {
             for (Grid<?, ?> value : loadedGrids.values()) {
                 value.tick();
@@ -496,21 +493,29 @@ public class GridContainer extends SavedData implements IGridContainer {
         return unsafeCast(grid);
     }
 
-    private void load(CompoundTag tag) {
+    private void load(CompoundTag tag, HolderLookup.Provider provider) {
 
         ListTag nbt = tag.getList("grids", CompoundTag.TAG_COMPOUND);
         assert grids.isEmpty();
         for (int i = 0; i < nbt.size(); ++i) {
             CompoundTag gridTag = nbt.getCompound(i);
-            UUID id = gridTag.getUUID("id");
+            UUID id;
+            if (gridTag.getTagType("id") == Tag.TAG_INT_ARRAY) {
+                id = gridTag.getUUID("id");
+            } else {
+                // Older versions merged fluid stack data into the grid tag, overwriting the grid UUID ("id")
+                // with a fluid id (STRING). Salvage the grid under a fresh UUID instead of failing the load.
+                LOGGER.warn("Grid {} in world {} has an invalid UUID tag. Loading under a new UUID.", i, world.dimension().location());
+                id = nextUUID();
+            }
             assert !grids.containsKey(id) : "Duplicate grid found.";
-            ResourceLocation gridTypeName = new ResourceLocation(gridTag.getString("type"));
+            ResourceLocation gridTypeName = ResourceLocation.parse(gridTag.getString("type"));
             IGridType<?> gridType = ThermalDynamics.GRID_TYPE_REGISTRY.get(gridTypeName);
             if (gridType == null) {
                 LOGGER.error("Failed to load Grid {} with type {} in world {}. GridType is no longer registered, it will be removed from the world.", id, gridTypeName, world.dimension().location());
                 continue;
             }
-            deserializeGrid(gridTag, id, unsafeCast(gridType));
+            deserializeGrid(gridTag, id, unsafeCast(gridType), provider);
         }
         if (DEBUG) {
             LOGGER.info("Loaded {} grids for {}.", grids.size(), world.dimension().location());
@@ -518,15 +523,16 @@ public class GridContainer extends SavedData implements IGridContainer {
     }
 
     @Override
-    public CompoundTag save(CompoundTag tag) {
+    public CompoundTag save(CompoundTag tag, HolderLookup.Provider provider) {
 
         ListTag grids = new ListTag();
         for (Map.Entry<UUID, Grid<?, ?>> entry : this.grids.entrySet()) {
             Grid<?, ?> grid = entry.getValue();
             CompoundTag gridTag = new CompoundTag();
+            gridTag.merge(grid.serializeNBT(provider));
+            // Written after the merge so grid data can never overwrite the identity fields.
             gridTag.putUUID("id", entry.getKey());
             gridTag.putString("type", ThermalDynamics.GRID_TYPE_REGISTRY.getKey(grid.getGridType()).toString());
-            gridTag.merge(grid.serializeNBT());
             grids.add(gridTag);
         }
         tag.put("grids", grids);
@@ -539,10 +545,10 @@ public class GridContainer extends SavedData implements IGridContainer {
         return true; // Always save this SavedData
     }
 
-    private <G extends Grid<G, N>, N extends GridNode<G>> void deserializeGrid(CompoundTag tag, UUID id, IGridType<G> gridType) {
+    private <G extends Grid<G, N>, N extends GridNode<G>> void deserializeGrid(CompoundTag tag, UUID id, IGridType<G> gridType, HolderLookup.Provider provider) {
 
         G grid = createAndAddGrid(id, gridType, false);
-        grid.deserializeNBT(tag);
+        grid.deserializeNBT(provider, tag);
 
         for (N node : grid.nodeGraph.nodes()) {
             addGridLookup(grid, node.getPos());

@@ -10,6 +10,7 @@ import cofh.thermal.core.common.config.ThermalCoreConfig;
 import cofh.thermal.dynamics.common.inventory.ItemBufferMenu;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
@@ -186,11 +187,11 @@ public class ItemBufferBlockEntity extends SecurableBlockEntity implements MenuP
 
     // region NBT
     @Override
-    public void load(CompoundTag nbt) {
+    public void loadAdditional(CompoundTag nbt, HolderLookup.Provider provider) {
 
-        super.load(nbt);
+        super.loadAdditional(nbt, provider);
 
-        inventory.read(nbt);
+        inventory.read(provider, nbt);
 
         latchMode = nbt.getBoolean(TAG_MODE);
         checkNBT = nbt.getBoolean(TAG_FILTER_OPT_NBT);
@@ -202,11 +203,11 @@ public class ItemBufferBlockEntity extends SecurableBlockEntity implements MenuP
     }
 
     @Override
-    public void saveAdditional(CompoundTag nbt) {
+    public void saveAdditional(CompoundTag nbt, HolderLookup.Provider provider) {
 
-        super.saveAdditional(nbt);
+        super.saveAdditional(nbt, provider);
 
-        inventory.write(nbt);
+        inventory.write(provider, nbt);
 
         nbt.putBoolean(TAG_MODE, latchMode);
         nbt.putBoolean(TAG_FILTER_OPT_NBT, checkNBT);

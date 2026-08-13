@@ -22,6 +22,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.ItemInteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
@@ -118,16 +119,15 @@ public class DuctBlock extends Block implements EntityBlock, SimpleWaterloggedBl
     }
 
     @Override
-    public InteractionResult use(BlockState state, Level worldIn, BlockPos pos, Player player, InteractionHand handIn, BlockHitResult hit) {
+    public ItemInteractionResult useItemOn(ItemStack heldStack, BlockState state, Level worldIn, BlockPos pos, Player player, InteractionHand handIn, BlockHitResult hit) {
 
         if (worldIn.getBlockEntity(pos) instanceof DuctBlockEntity<?, ?> duct) {
             duct.calcDuctModelDataServer();
             HitResult rawHit = RayTracer.retrace(player, ClipContext.Fluid.NONE);
             if (rawHit instanceof VoxelShapeBlockHitResult advHit) {
-                ItemStack heldStack = player.getItemInHand(handIn);
                 if (Utils.isWrench(heldStack)) {
                     if (Utils.isClientWorld(worldIn)) {
-                        return InteractionResult.SUCCESS;
+                        return ItemInteractionResult.SUCCESS;
                     }
                     if (advHit.subHit == 0) {
                         duct.attemptConnect(advHit.getDirection());
@@ -136,33 +136,33 @@ public class DuctBlock extends Block implements EntityBlock, SimpleWaterloggedBl
                     } else if (advHit.subHit < 13) {
                         duct.attemptDisconnect(DIRECTIONS[advHit.subHit - 7], player);
                     }
-                    return InteractionResult.CONSUME;
+                    return ItemInteractionResult.CONSUME;
                 } else if (heldStack.getItem() instanceof RedprintItem) {
                     if (Utils.isClientWorld(worldIn)) {
-                        return InteractionResult.SUCCESS;
+                        return ItemInteractionResult.SUCCESS;
                     }
                     if (advHit.subHit >= 7) {
                         if (duct.attachmentRedprintInteraction(heldStack, DIRECTIONS[advHit.subHit - 7], player)) {
-                            return InteractionResult.SUCCESS;
+                            return ItemInteractionResult.SUCCESS;
                         }
                     }
                 } else if (heldStack.isEmpty()) {
                     if (Utils.isClientWorld(worldIn)) {
-                        return InteractionResult.SUCCESS;
+                        return ItemInteractionResult.SUCCESS;
                     }
                     if (advHit.subHit >= 7) {
                         if (duct.openAttachmentGui(DIRECTIONS[advHit.subHit - 7], player)) {
-                            return InteractionResult.SUCCESS;
+                            return ItemInteractionResult.SUCCESS;
                         }
                     } else {
                         if (duct.openDuctGui(player)) {
-                            return InteractionResult.SUCCESS;
+                            return ItemInteractionResult.SUCCESS;
                         }
                     }
-                    return InteractionResult.CONSUME;
+                    return ItemInteractionResult.CONSUME;
                 } else if (heldStack.getItem() instanceof AttachmentItem attachmentItem) {
                     if (Utils.isClientWorld(worldIn)) {
-                        return InteractionResult.SUCCESS;
+                        return ItemInteractionResult.SUCCESS;
                     }
                     if (advHit.subHit == 0) {
                         if (duct.attemptAttachmentInstall(advHit.getDirection(), player, attachmentItem.getAttachmentType(heldStack))) {
@@ -172,7 +172,7 @@ public class DuctBlock extends Block implements EntityBlock, SimpleWaterloggedBl
                         } else {
                             duct.openDuctGui(player);
                         }
-                        return InteractionResult.SUCCESS;
+                        return ItemInteractionResult.SUCCESS;
                     } else if (advHit.subHit >= 7) {
                         if (duct.attemptAttachmentInstall(DIRECTIONS[advHit.subHit - 7], player, attachmentItem.getAttachmentType(heldStack))) {
                             if (!player.getAbilities().instabuild) {
@@ -181,12 +181,12 @@ public class DuctBlock extends Block implements EntityBlock, SimpleWaterloggedBl
                         } else {
                             duct.openAttachmentGui(DIRECTIONS[advHit.subHit - 7], player);
                         }
-                        return InteractionResult.SUCCESS;
+                        return ItemInteractionResult.SUCCESS;
                     }
                 }
             }
         }
-        return InteractionResult.PASS;
+        return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
     }
 
     @Override

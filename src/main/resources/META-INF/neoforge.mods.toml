@@ -1,5 +1,5 @@
 modLoader = "javafml"
-loaderVersion = "[${lang_version},)"
+loaderVersion = "[4,)"
 issueTrackerURL = "https://github.com/cofh/feedback"
 license = "CoFH - Don't Be A Jerk (Learn, Don't Steal)"
 
@@ -20,7 +20,7 @@ Contains various logistic options for technical gameplay!
 [[dependencies.thermal_dynamics]]
 modId = "minecraft"
 type = "required"
-versionRange = "1.20.4"
+versionRange = "[${mc_version},1.22)"
 ordering = "AFTER"
 side = "BOTH"
 
@@ -33,14 +33,14 @@ side = "BOTH"
 
 [[dependencies.thermal_dynamics]]
 modId = "cofh_core"
-required = true
+type = "required"
 versionRange = "${cofh_core_version_range}"
 ordering = "AFTER"
 side = "BOTH"
 
 [[dependencies.thermal_dynamics]]
 modId = "thermal"
-required = true
+type = "required"
 versionRange = "${thermal_core_version_range}"
 ordering = "AFTER"
 side = "BOTH"

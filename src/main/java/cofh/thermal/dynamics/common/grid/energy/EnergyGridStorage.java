@@ -1,6 +1,7 @@
 package cofh.thermal.dynamics.common.grid.energy;
 
 import cofh.lib.common.energy.IRedstoneFluxStorage;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.neoforged.neoforge.common.util.INBTSerializable;
 
@@ -133,13 +134,13 @@ public final class EnergyGridStorage implements IRedstoneFluxStorage, INBTSerial
     }
 
     @Override
-    public CompoundTag serializeNBT() {
+    public CompoundTag serializeNBT(HolderLookup.Provider provider) {
 
         return write(new CompoundTag());
     }
 
     @Override
-    public void deserializeNBT(CompoundTag nbt) {
+    public void deserializeNBT(HolderLookup.Provider provider, CompoundTag nbt) {
 
         read(nbt);
     }

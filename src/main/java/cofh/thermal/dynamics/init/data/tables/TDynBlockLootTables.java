@@ -1,12 +1,18 @@
 package cofh.thermal.dynamics.init.data.tables;
 
 import cofh.lib.init.data.loot.BlockLootSubProviderCoFH;
+import net.minecraft.core.HolderLookup;
 
 import static cofh.thermal.core.ThermalCore.BLOCKS;
 import static cofh.thermal.core.ThermalCore.ITEMS;
 import static cofh.thermal.dynamics.init.registries.TDynIDs.*;
 
 public class TDynBlockLootTables extends BlockLootSubProviderCoFH {
+
+    public TDynBlockLootTables(HolderLookup.Provider provider) {
+
+        super(provider);
+    }
 
     @Override
     protected void generate() {

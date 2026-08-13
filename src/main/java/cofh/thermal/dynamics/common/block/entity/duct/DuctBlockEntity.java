@@ -18,6 +18,8 @@ import cofh.thermal.dynamics.common.grid.Grid;
 import cofh.thermal.dynamics.common.grid.GridNode;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
@@ -27,6 +29,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -82,12 +85,15 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
             setChanged();
             other.setChanged();
 
+            level.invalidateCapabilities(worldPosition);
+            level.invalidateCapabilities(other.worldPosition);
             TileStatePacket.sendToClient(this);
             TileStatePacket.sendToClient(other);
         } else {
             connections[side.ordinal()] = ALLOWED;
             setChanged();
             callNeighborStateChange();
+            level.invalidateCapabilities(worldPosition);
             TileStatePacket.sendToClient(this);
         }
         return true;
@@ -115,12 +121,15 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
             setChanged();
             other.setChanged();
 
+            level.invalidateCapabilities(worldPosition);
+            level.invalidateCapabilities(other.worldPosition);
             TileStatePacket.sendToClient(this);
             TileStatePacket.sendToClient(other);
         } else {
             connections[side.ordinal()] = DISABLED;
             setChanged();
             callNeighborStateChange();
+            level.invalidateCapabilities(worldPosition);
             TileStatePacket.sendToClient(this);
         }
         return true;
@@ -139,11 +148,12 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
         connections[side.ordinal()] = FORCED;
 
         ItemStack offhand = player.getItemInHand(InteractionHand.OFF_HAND);
-        if (offhand.hasTag() && offhand.getItem() instanceof RedprintItem) {
+        if (offhand.has(DataComponents.CUSTOM_DATA) && offhand.getItem() instanceof RedprintItem) {
             attachmentRedprintInteraction(offhand, side, player);
         }
         setChanged();
         callNeighborStateChange();
+        level.invalidateCapabilities(worldPosition);
 
         // TODO: Send FULL Update Packet
         TileStatePacket.sendToClient(this);
@@ -162,6 +172,7 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
             connections[side.ordinal()] = adjacent == null ? ALLOWED : DISABLED;
             setChanged();
             callNeighborStateChange();
+            level.invalidateCapabilities(worldPosition);
 
             // TODO: Send FULL Update Packet
             TileStatePacket.sendToClient(this);
@@ -173,17 +184,18 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
     public boolean attachmentRedprintInteraction(ItemStack stack, Direction side, Player player) {
 
         if (side != null && attachments[side.ordinal()] instanceof IConveyableData conveyableData) {
-            if (stack.getTag() == null) {
-                conveyableData.writeConveyableData(player, stack.getOrCreateTag());
-                if (stack.getTag().isEmpty()) {
-                    stack.setTag(null);
+            if (!stack.has(DataComponents.CUSTOM_DATA)) {
+                CompoundTag tag = new CompoundTag();
+                conveyableData.writeConveyableData(player, tag);
+                if (tag.isEmpty()) {
                     return false;
                 }
-                player.level.playSound(null, player.blockPosition(), SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.PLAYERS, 0.5F, 0.7F);
+                stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+                player.level().playSound(null, player.blockPosition(), SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.PLAYERS, 0.5F, 0.7F);
                 return true;
             }
-            conveyableData.readConveyableData(player, stack.getTag());
-            player.level.playSound(null, player.blockPosition(), SoundEvents.UI_BUTTON_CLICK.value(), SoundSource.PLAYERS, 0.5F, 0.8F);
+            conveyableData.readConveyableData(player, stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag());
+            player.level().playSound(null, player.blockPosition(), SoundEvents.UI_BUTTON_CLICK.value(), SoundSource.PLAYERS, 0.5F, 0.8F);
             return true;
         }
         return false;
@@ -269,7 +281,11 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
     public DuctModelData getDuctModelData() {
 
         if (modelData.needsRefresh()) {
-            calcDuctModelDataServer();
+            if (level != null && level.isClientSide()) {
+                calcDuctModelDataClient();
+            } else {
+                calcDuctModelDataServer();
+            }
         }
         return modelData;
     }
@@ -284,9 +300,11 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
 
     protected abstract boolean canConnectToBlock(Direction dir);
 
-    @Nonnull
-    @Override
-    public ModelData getModelData() {
+    /**
+     * Recomputes the connection state from client-side data (the synced connection array and neighbor block
+     * entities). Used to refresh the model data and, via {@link #getDuctModelData()}, the collision shape.
+     */
+    public void calcDuctModelDataClient() {
 
         modelData.clearState();
         for (Direction dir : DIRECTIONS) {
@@ -295,6 +313,13 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
             modelData.setExternalConnection(dir, canConnectToBlock(dir) || connections[dir.ordinal()] == FORCED);
             modelData.setAttachment(dir, attachments[dir.ordinal()].getTexture());
         }
+    }
+
+    @Nonnull
+    @Override
+    public ModelData getModelData() {
+
+        calcDuctModelDataClient();
         return ModelData.builder()
                 .with(DUCT_MODEL_DATA, modelData)
                 .build();
@@ -362,22 +387,23 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
                 }
             }
         }
+        modelData.setNeedsRefresh();
         requestModelDataUpdate();
     }
     // endregion
 
     // region NBT
     @Override
-    public CompoundTag getUpdateTag() {
+    public CompoundTag getUpdateTag(HolderLookup.Provider provider) {
 
         modelData.setNeedsRefresh();
-        return saveWithoutMetadata();
+        return saveWithoutMetadata(provider);
     }
 
     @Override
-    public void load(CompoundTag tag) {
+    public void loadAdditional(CompoundTag tag, HolderLookup.Provider provider) {
 
-        super.load(tag);
+        super.loadAdditional(tag, provider);
 
         redstonePower = tag.getInt(TAG_RS_POWER);
 
@@ -395,12 +421,17 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
                 attachments[i] = EmptyAttachment.INSTANCE;
             }
         }
+        if (level != null && level.isClientSide()) {
+            // Connection data changed on the client: recompute the shape and refresh the model data.
+            modelData.setNeedsRefresh();
+            requestModelDataUpdate();
+        }
     }
 
     @Override
-    public void saveAdditional(CompoundTag tag) {
+    public void saveAdditional(CompoundTag tag, HolderLookup.Provider provider) {
 
-        super.saveAdditional(tag);
+        super.saveAdditional(tag, provider);
 
         tag.putInt(TAG_RS_POWER, redstonePower);
 
@@ -442,7 +473,7 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
     @Override
     public final G getGrid() {
 
-        if (level.isClientSide) {
+        if (level.isClientSide()) {
             throw new UnsupportedOperationException("No grid representation on client.");
         }
         if (grid == null) {
@@ -457,7 +488,7 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
     @Override
     public final void setGrid(G grid) {
 
-        if (level.isClientSide) {
+        if (level.isClientSide()) {
             throw new UnsupportedOperationException("No grid representation on client.");
         }
         this.grid = grid;
@@ -516,6 +547,9 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
         connections[dir.ordinal()] = type;
         setChanged();
         callNeighborStateChange();
+        if (level != null) {
+            level.invalidateCapabilities(worldPosition);
+        }
         TileStatePacket.sendToClient(this);
     }
     // endregion
@@ -549,7 +583,7 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
     @Nullable
     public <T, C> T getCapability(BlockCapability<T, C> capability, Direction side) {
 
-        if (side == null || level == null || level.isClientSide || connections[side.ordinal()] == DISABLED || getGrid() == null) {
+        if (side == null || level == null || level.isClientSide() || connections[side.ordinal()] == DISABLED || getGrid() == null) {
             return null;
         }
         return attachments[side.ordinal()].wrapGridCapability(capability, getGrid().getCapability(capability));

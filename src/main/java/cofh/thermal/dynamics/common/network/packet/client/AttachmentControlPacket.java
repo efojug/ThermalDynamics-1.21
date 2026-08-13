@@ -2,18 +2,18 @@ package cofh.thermal.dynamics.common.network.packet.client;
 
 
 import cofh.core.util.ProxyUtils;
-import cofh.lib.util.Utils;
+import cofh.lib.util.helpers.NetworkHelper;
 import cofh.thermal.dynamics.api.grid.IDuct;
 import cofh.thermal.dynamics.common.attachment.IPacketHandlerAttachment;
 import cofh.thermal.dynamics.common.network.data.client.AttachmentControlPayload;
-import io.netty.buffer.Unpooled;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.network.PacketDistributor;
-import net.neoforged.neoforge.network.handling.PlayPayloadContext;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 public class AttachmentControlPacket {
 
@@ -24,9 +24,9 @@ public class AttachmentControlPacket {
         return INSTANCE;
     }
 
-    public void handle(final AttachmentControlPayload payload, final PlayPayloadContext context) {
+    public void handle(final AttachmentControlPayload payload, final IPayloadContext context) {
 
-        context.workHandler().submitAsync(() -> {
+        context.enqueueWork(() -> {
             Level world = ProxyUtils.getClientWorld();
 
             BlockPos pos = payload.pos();
@@ -41,9 +41,9 @@ public class AttachmentControlPacket {
 
     public static void sendToClient(IPacketHandlerAttachment attachment) {
 
-        if (attachment == null || attachment.world() == null || attachment.world().isClientSide || !attachment.hasControlPacket()) {
+        if (attachment == null || attachment.world() == null || attachment.world().isClientSide() || !attachment.hasControlPacket()) {
             return;
         }
-        PacketDistributor.NEAR.with(Utils.createTargetPoint(attachment.world(), attachment.pos())).send(new AttachmentControlPayload(attachment.pos(), attachment.side(), attachment.getControlPacket(new FriendlyByteBuf(Unpooled.buffer()))));
+        PacketDistributor.sendToPlayersNear((ServerLevel) attachment.world(), null, attachment.pos().getX(), attachment.pos().getY(), attachment.pos().getZ(), 128, new AttachmentControlPayload(attachment.pos(), attachment.side(), attachment.getControlPacket(NetworkHelper.createBuffer(attachment.world().registryAccess()))));
     }
 }

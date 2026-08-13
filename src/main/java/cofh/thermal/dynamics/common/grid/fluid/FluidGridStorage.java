@@ -1,6 +1,8 @@
 package cofh.thermal.dynamics.common.grid.fluid;
 
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
 import net.neoforged.neoforge.common.util.INBTSerializable;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
@@ -114,9 +116,13 @@ public final class FluidGridStorage implements IFluidHandler, INBTSerializable<C
     }
 
     // region NBT
-    public FluidGridStorage read(CompoundTag nbt) {
+    public FluidGridStorage read(HolderLookup.Provider provider, CompoundTag nbt) {
 
-        setFluid(FluidStack.loadFluidStackFromNBT(nbt));
+        // Fluid stacks are stored with "id" as a fluid resource location (STRING). Grid-level tags use
+        // "id" for the grid UUID (INT_ARRAY) and must never be parsed as a fluid stack.
+        if (nbt.getTagType("id") == Tag.TAG_STRING) {
+            setFluid(FluidStack.parseOptional(provider, nbt));
+        }
         this.baseCapacity = nbt.getInt(TAG_CAPACITY);
 
         //        this.averageIn = nbt.getInt(TAG_TRACK_IN);
@@ -126,9 +132,11 @@ public final class FluidGridStorage implements IFluidHandler, INBTSerializable<C
         return this;
     }
 
-    public CompoundTag write(CompoundTag nbt) {
+    public CompoundTag write(HolderLookup.Provider provider, CompoundTag nbt) {
 
-        fluid.writeToNBT(nbt);
+        if (!fluid.isEmpty()) {
+            nbt.merge((CompoundTag) fluid.save(provider, new CompoundTag()));
+        }
         nbt.putInt(TAG_CAPACITY, baseCapacity);
 
         //        nbt.putInt(TAG_TRACK_IN, averageIn);
@@ -138,15 +146,15 @@ public final class FluidGridStorage implements IFluidHandler, INBTSerializable<C
     }
 
     @Override
-    public CompoundTag serializeNBT() {
+    public CompoundTag serializeNBT(HolderLookup.Provider provider) {
 
-        return write(new CompoundTag());
+        return write(provider, new CompoundTag());
     }
 
     @Override
-    public void deserializeNBT(CompoundTag nbt) {
+    public void deserializeNBT(HolderLookup.Provider provider, CompoundTag nbt) {
 
-        read(nbt);
+        read(provider, nbt);
     }
     // endregion
 
@@ -173,16 +181,16 @@ public final class FluidGridStorage implements IFluidHandler, INBTSerializable<C
             if (fluid.isEmpty()) {
                 return Math.min(capacity, resource.getAmount());
             }
-            if (!fluid.isFluidEqual(resource)) {
+            if (!FluidStack.isSameFluidSameComponents(fluid, resource)) {
                 return 0;
             }
             return Math.min(capacity - fluid.getAmount(), resource.getAmount());
         }
         if (fluid.isEmpty()) {
-            setFluid(new FluidStack(resource, Math.min(capacity, resource.getAmount())));
+            setFluid(resource.copyWithAmount(Math.min(capacity, resource.getAmount())));
             return fluid.getAmount();
         }
-        if (!fluid.isFluidEqual(resource)) {
+        if (!FluidStack.isSameFluidSameComponents(fluid, resource)) {
             return 0;
         }
         if (fluid.getAmount() >= capacity) {
@@ -203,7 +211,7 @@ public final class FluidGridStorage implements IFluidHandler, INBTSerializable<C
     @Override
     public FluidStack drain(FluidStack resource, FluidAction action) {
 
-        if (resource.isEmpty() || !resource.isFluidEqual(fluid)) {
+        if (resource.isEmpty() || !FluidStack.isSameFluidSameComponents(resource, fluid)) {
             return FluidStack.EMPTY;
         }
         return drain(resource.getAmount(), action);
@@ -220,7 +228,7 @@ public final class FluidGridStorage implements IFluidHandler, INBTSerializable<C
         if (fluid.getAmount() < drained) {
             drained = fluid.getAmount();
         }
-        FluidStack stack = new FluidStack(fluid, drained);
+        FluidStack stack = fluid.copyWithAmount(drained);
         if (action.execute()) {
             fluid.shrink(drained);
             if (fluid.isEmpty()) {

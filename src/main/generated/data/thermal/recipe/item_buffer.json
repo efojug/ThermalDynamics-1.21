@@ -3,16 +3,16 @@
   "category": "building",
   "key": {
     "C": {
-      "tag": "forge:ingots/signalum"
+      "tag": "c:ingots/signalum"
     },
     "I": {
-      "tag": "forge:ingots/tin"
+      "tag": "c:ingots/tin"
     },
     "P": {
       "tag": "minecraft:planks"
     },
     "Q": {
-      "tag": "forge:gems/quartz"
+      "tag": "c:gems/quartz"
     }
   },
   "pattern": [
@@ -21,7 +21,7 @@
     "IQI"
   ],
   "result": {
-    "item": "thermal:item_buffer"
-  },
-  "show_notification": true
+    "count": 1,
+    "id": "thermal:item_buffer"
+  }
 }

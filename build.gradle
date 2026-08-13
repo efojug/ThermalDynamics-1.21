@@ -2,16 +2,16 @@ plugins {
     id 'java'
     id 'maven-publish'
 
-    id 'com.github.johnrengelman.shadow' version '7.1.2'
+    id 'com.gradleup.shadow' version '8.3.6'
     id 'com.matthewprenger.cursegradle' version '1.4.0'
     id 'com.modrinth.minotaur' version "2.+"
 
-    id 'net.neoforged.gradle.userdev' version '7.0.97'
+    id 'net.neoforged.gradle.userdev' version '7.0.192'
 }
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
+        languageVersion = JavaLanguageVersion.of(21)
     }
     withSourcesJar()
     // withJavadocJar()
@@ -33,9 +33,15 @@ minecraft {
     accessTransformers.file file("src/main/resources/META-INF/accesstransformer.cfg")
 }
 
+runs {
+    data {
+        arguments.addAll '--mod', mod_id, '--all', '--output', file('src/main/generated').absolutePath, '--existing', file('src/main/resources').absolutePath
+    }
+}
+
 if (System.getenv('CURSEFORGE_KEY') || project.hasProperty('curseforgeKey')) {
     println "Enabling CurseForge config."
-    tasks.named('curseforge').configure { dependsOn(jar) }
+    tasks.named('curseforge').configure { dependsOn(shadowJar) }
 
     curseforge {
         apiKey = System.getenv("CURSEFORGE_KEY") ?: project.findProperty("curseforgeKey")
@@ -54,7 +60,7 @@ if (System.getenv('CURSEFORGE_KEY') || project.hasProperty('curseforgeKey')) {
 
 if (System.getenv('MODRINTH_TOKEN') || project.hasProperty('modrinthToken')) {
     println "Enabling Modrinth config."
-    tasks.named('modrinth').configure { dependsOn(jar) }
+    tasks.named('modrinth').configure { dependsOn(shadowJar) }
 
     modrinth {
         token = System.getenv("MODRINTH_TOKEN") ?: project.findProperty("modrinthToken")
@@ -68,11 +74,10 @@ if (System.getenv('MODRINTH_TOKEN') || project.hasProperty('modrinthToken')) {
 }
 
 processResources {
-    filesMatching('META-INF/mods.toml') {
+    filesMatching('META-INF/neoforge.mods.toml') {
         expand 'file': ['jarVersion': mod_version],
                 'mc_version': mc_version,
                 'neo_version': neo_version,
-                'lang_version': neo_version.split('\\.')[0],
                 'cofh_core_version_range': "[${cofh_core_version.replace(".+", "")},${cofh_core_max_version})",
                 'thermal_core_version_range': "[${thermal_core_version.replace(".+", "")},${thermal_core_max_version})"
     }
@@ -85,6 +90,7 @@ configurations {
 
 repositories {
     mavenLocal()
+    mavenCentral()
     maven { url 'https://maven.covers1624.net/' }
     maven { url 'https://maven.blamejared.com/' }
     maven { url 'https://maven.theillusivec4.top/' }
@@ -135,7 +141,7 @@ tasks.register("signShadowJar") {
 
     doFirst {
         def args = [:]
-        args['jar'] = jar.archiveFile.get().asFile
+        args['jar'] = shadowJar.archiveFile.get().asFile
         if (System.getenv("KEY_STORE")) {
             args['keyStore'] = System.getenv("KEY_STORE")
             file(System.getenv("KEY_STORE_PROPS")).withReader {

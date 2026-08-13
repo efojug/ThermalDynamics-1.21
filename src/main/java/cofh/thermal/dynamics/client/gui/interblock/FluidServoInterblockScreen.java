@@ -18,7 +18,7 @@ import static cofh.lib.util.helpers.SoundHelper.playClickSound;
 
 public class FluidServoInterblockScreen extends ContainerScreenCoFH<FluidServoInterblockMenu> {
 
-    public static final ResourceLocation TEXTURE = new ResourceLocation(PATH_GUI + "generic.png");
+    public static final ResourceLocation TEXTURE = ResourceLocation.parse(PATH_GUI + "generic.png");
 
     public static final String TEX_DENY_LIST = PATH_GUI + "filters/filter_deny_list.png";
     public static final String TEX_ALLOW_LIST = PATH_GUI + "filters/filter_allow_list.png";

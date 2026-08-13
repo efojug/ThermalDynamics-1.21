@@ -7,8 +7,10 @@ import cofh.lib.api.block.entity.IPacketHandlerTile;
 import cofh.thermal.dynamics.api.grid.IGridHostLuminous;
 import cofh.thermal.dynamics.api.grid.IGridHostUpdateable;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.client.model.data.ModelData;
@@ -53,20 +55,20 @@ public class FluidDuctWindowedBlockEntity extends FluidDuctBlockEntity implement
 
     // region NBT
     @Override
-    public void saveAdditional(CompoundTag tag) {
+    public void saveAdditional(CompoundTag tag, HolderLookup.Provider provider) {
 
         if (!renderFluid.isEmpty()) {
-            tag.put(TAG_RENDER_FLUID, renderFluid.writeToNBT(new CompoundTag()));
+            tag.put(TAG_RENDER_FLUID, renderFluid.save(provider, new CompoundTag()));
         }
-        super.saveAdditional(tag);
+        super.saveAdditional(tag, provider);
     }
 
     @Override
-    public void load(CompoundTag tag) {
+    public void loadAdditional(CompoundTag tag, HolderLookup.Provider provider) {
 
-        super.load(tag);
+        super.loadAdditional(tag, provider);
 
-        renderFluid = FluidStack.loadFluidStackFromNBT(tag.getCompound(TAG_RENDER_FLUID));
+        renderFluid = FluidStack.parseOptional(provider, tag.getCompound(TAG_RENDER_FLUID));
     }
     // endregion
 
@@ -79,9 +81,9 @@ public class FluidDuctWindowedBlockEntity extends FluidDuctBlockEntity implement
     }
 
     @Override
-    public CompoundTag getUpdateTag() {
+    public CompoundTag getUpdateTag(HolderLookup.Provider provider) {
 
-        return saveWithoutMetadata();
+        return saveWithoutMetadata(provider);
     }
 
     // STATE
@@ -89,7 +91,7 @@ public class FluidDuctWindowedBlockEntity extends FluidDuctBlockEntity implement
     public FriendlyByteBuf getStatePacket(FriendlyByteBuf buffer) {
 
         renderFluid = getGrid().getRenderFluid();
-        buffer.writeFluidStack(renderFluid);
+        FluidStack.OPTIONAL_STREAM_CODEC.encode((RegistryFriendlyByteBuf) buffer, renderFluid);
 
         super.getStatePacket(buffer);
 
@@ -100,7 +102,7 @@ public class FluidDuctWindowedBlockEntity extends FluidDuctBlockEntity implement
     public void handleStatePacket(FriendlyByteBuf buffer) {
 
         int prevLight = getLightValue();
-        renderFluid = buffer.readFluidStack();
+        renderFluid = FluidStack.OPTIONAL_STREAM_CODEC.decode((RegistryFriendlyByteBuf) buffer);
 
         if (prevLight != getLightValue()) {
             level.getChunkSource().getLightEngine().checkBlock(worldPosition);

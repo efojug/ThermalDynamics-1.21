@@ -5,6 +5,7 @@ import cofh.lib.common.energy.IRedstoneFluxStorage;
 import cofh.thermal.dynamics.api.helper.GridHelper;
 import cofh.thermal.dynamics.common.grid.Grid;
 import net.minecraft.core.Direction;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -132,18 +133,18 @@ public class EnergyGrid extends Grid<EnergyGrid, EnergyGridNode> implements IRed
     }
 
     @Override
-    public @org.jetbrains.annotations.UnknownNullability CompoundTag serializeNBT() {
+    public @org.jetbrains.annotations.UnknownNullability CompoundTag serializeNBT(HolderLookup.Provider provider) {
 
-        CompoundTag tag = super.serializeNBT();
+        CompoundTag tag = super.serializeNBT(provider);
         storage.write(tag);
         return tag;
     }
 
     @Override
-    public void deserializeNBT(CompoundTag nbt) {
+    public void deserializeNBT(HolderLookup.Provider provider, CompoundTag nbt) {
 
-        super.deserializeNBT(nbt);
-        storage.deserializeNBT(nbt);
+        super.deserializeNBT(provider, nbt);
+        storage.deserializeNBT(provider, nbt);
     }
 
     @Override

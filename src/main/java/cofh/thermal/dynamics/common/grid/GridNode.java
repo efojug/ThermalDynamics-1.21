@@ -4,6 +4,7 @@ import cofh.thermal.dynamics.api.grid.IDuct;
 import cofh.thermal.dynamics.api.helper.GridHelper;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.common.util.INBTSerializable;
@@ -31,13 +32,13 @@ public abstract class GridNode<G extends Grid<G, ?>> implements INBTSerializable
     }
 
     @Override
-    public CompoundTag serializeNBT() {
+    public CompoundTag serializeNBT(HolderLookup.Provider provider) {
 
         return new CompoundTag();
     }
 
     @Override
-    public void deserializeNBT(CompoundTag nbt) {
+    public void deserializeNBT(HolderLookup.Provider provider, CompoundTag nbt) {
 
     }
 

@@ -7,6 +7,7 @@ import it.unimi.dsi.fastutil.longs.*;
 import it.unimi.dsi.fastutil.objects.Object2ObjectRBTreeMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtUtils;
@@ -187,14 +188,14 @@ public abstract class Grid<G extends Grid<G, N>, N extends GridNode<G>> implemen
     }
 
     @Override
-    public CompoundTag serializeNBT() {
+    public CompoundTag serializeNBT(HolderLookup.Provider provider) {
 
         CompoundTag tag = new CompoundTag();
         ListTag nodes = new ListTag();
         for (N node : nodeGraph.nodes()) {
             CompoundTag nodeTag = new CompoundTag();
             nodeTag.put("pos", NbtUtils.writeBlockPos(node.getPos()));
-            nodeTag.merge(node.serializeNBT());
+            nodeTag.merge(node.serializeNBT(provider));
             nodes.add(nodeTag);
         }
         tag.put("nodes", nodes);
@@ -220,28 +221,28 @@ public abstract class Grid<G extends Grid<G, N>, N extends GridNode<G>> implemen
     }
 
     @Override
-    public void deserializeNBT(CompoundTag nbt) {
+    public void deserializeNBT(HolderLookup.Provider provider, CompoundTag nbt) {
 
         ListTag nodes = nbt.getList("nodes", 10);
 
         for (int i = 0; i < nodes.size(); ++i) {
             CompoundTag nodeTag = nodes.getCompound(i);
-            BlockPos pos = NbtUtils.readBlockPos(nodeTag.getCompound("pos"));
+            BlockPos pos = NbtUtils.readBlockPos(nodeTag, "pos").orElseThrow();
             GridNode<?> node = newNode(pos, false);
-            node.deserializeNBT(nodeTag);
+            node.deserializeNBT(provider, nodeTag);
         }
 
         ListTag edges = nbt.getList("edges", 10);
         for (int i = 0; i < edges.size(); ++i) {
             CompoundTag edgeTag = edges.getCompound(i);
-            BlockPos uPos = NbtUtils.readBlockPos(edgeTag.getCompound("U"));
-            BlockPos vPos = NbtUtils.readBlockPos(edgeTag.getCompound("V"));
+            BlockPos uPos = NbtUtils.readBlockPos(edgeTag, "U").orElseThrow();
+            BlockPos vPos = NbtUtils.readBlockPos(edgeTag, "V").orElseThrow();
             nodeGraph.putEdge(this.nodes.get(uPos), this.nodes.get(vPos));
         }
         ListTag updateable = nbt.getList("updateable", 10);
         for (int i = 0; i < updateable.size(); ++i) {
             CompoundTag updateTag = updateable.getCompound(i);
-            BlockPos pos = NbtUtils.readBlockPos(updateTag.getCompound("pos"));
+            BlockPos pos = NbtUtils.readBlockPos(updateTag, "pos").orElseThrow();
             updatableHosts.add(pos);
         }
         // Make sure no Node positions are identity match to BlockPos.ZERO

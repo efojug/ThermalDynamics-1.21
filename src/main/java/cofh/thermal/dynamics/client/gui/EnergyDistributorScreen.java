@@ -15,7 +15,7 @@
 //public class EnergyDistributorScreen extends ThermalTileScreenBase<EnergyDistributorContainer> {
 //
 //    public static final String TEX_PATH = ID_THERMAL + ":textures/gui/container/energy_distributor.png";
-//    public static final ResourceLocation TEXTURE = new ResourceLocation(TEX_PATH);
+//    public static final ResourceLocation TEXTURE = ResourceLocation.parse(TEX_PATH);
 //
 //    public static final String TEX_MODE_LATCH_OFF = ID_THERMAL + ":textures/gui/container/item_buffer_mode_normal.png";
 //    public static final String TEX_MODE_LATCH_ON = ID_THERMAL + ":textures/gui/container/item_buffer_mode_latch.png";

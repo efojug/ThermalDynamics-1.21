@@ -6,6 +6,7 @@ import cofh.thermal.dynamics.api.helper.GridHelper;
 import cofh.thermal.dynamics.common.block.entity.duct.DuctBlockEntity;
 import cofh.thermal.dynamics.common.grid.Grid;
 import net.minecraft.core.Direction;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -29,6 +30,8 @@ import static cofh.thermal.dynamics.init.registries.TDynGrids.FLUID_GRID;
 public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidHandler {
 
     protected static final int NODE_CAPACITY = 100;
+
+    protected static final String TAG_STORAGE = "Storage";
 
     protected final FluidGridStorage storage = new FluidGridStorage(NODE_CAPACITY);
 
@@ -115,7 +118,7 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
     private void renderUpdate() {
 
         prevRenderFluid = renderFluid;
-        renderFluid = new FluidStack(getFluid(), BUCKET_VOLUME);
+        renderFluid = getFluid().copyWithAmount(BUCKET_VOLUME);
 
         if (!FluidHelper.fluidsEqual(prevRenderFluid, renderFluid) || wasFilled && timeTracker.hasDelayPassed(world, 40) || needsUpdate) {
             if (!wasFilled && renderFluid.isEmpty()) {
@@ -142,7 +145,7 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
 
         storage.setBaseCapacity(Math.max(TANK_MEDIUM, getNodes().size() * NODE_CAPACITY));
         storage.setCapacity(this.getCapacity() + from.getCapacity());
-        storage.setFluid(new FluidStack(storage.getFluid(), this.getFluidAmount() + from.getFluidAmount()));
+        storage.setFluid(storage.getFluid().copyWithAmount(this.getFluidAmount() + from.getFluidAmount()));
 
         needsUpdate = true;
 
@@ -173,25 +176,33 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
 
         for (FluidGrid grid : others) {
             int gridNodes = grid.getNodes().size();
-            grid.setFluid(new FluidStack(getFluid(), (fluidPerNode * gridNodes)));
+            grid.setFluid(getFluid().copyWithAmount(fluidPerNode * gridNodes));
         }
         // First grid gets the extra. Why? Because there's always a first grid.
-        others.get(0).setFluid(new FluidStack(getFluid(), others.get(0).getFluid().getAmount() + remFluid));
+        others.get(0).setFluid(getFluid().copyWithAmount(others.get(0).getFluid().getAmount() + remFluid));
     }
 
     @Override
-    public CompoundTag serializeNBT() {
+    public CompoundTag serializeNBT(HolderLookup.Provider provider) {
 
-        CompoundTag tag = super.serializeNBT();
-        storage.write(tag);
+        CompoundTag tag = super.serializeNBT(provider);
+        // Fluid data must be nested: FluidStack serialization uses the "id" key, which would otherwise
+        // overwrite the grid UUID that GridContainer stores under "id".
+        tag.put(TAG_STORAGE, storage.serializeNBT(provider));
         return tag;
     }
 
     @Override
-    public void deserializeNBT(CompoundTag nbt) {
+    public void deserializeNBT(HolderLookup.Provider provider, CompoundTag nbt) {
 
-        super.deserializeNBT(nbt);
-        storage.deserializeNBT(nbt);
+        super.deserializeNBT(provider, nbt);
+        if (nbt.contains(TAG_STORAGE, CompoundTag.TAG_COMPOUND)) {
+            storage.deserializeNBT(provider, nbt.getCompound(TAG_STORAGE));
+        } else {
+            // Legacy: older saves merged the fluid data into the grid tag itself. It is only parsed
+            // when "id" actually holds a fluid id (STRING); the grid UUID (INT_ARRAY) is not fluid data.
+            storage.read(provider, nbt);
+        }
     }
 
     @Override

@@ -3,13 +3,13 @@
   "category": "building",
   "key": {
     "G": {
-      "tag": "forge:glass"
+      "tag": "c:glass_blocks"
     },
     "L": {
-      "tag": "forge:ingots/lead"
+      "tag": "c:ingots/lead"
     },
     "R": {
-      "tag": "forge:dusts/redstone"
+      "tag": "c:dusts/redstone"
     }
   },
   "pattern": [
@@ -19,7 +19,6 @@
   ],
   "result": {
     "count": 4,
-    "item": "thermal:energy_duct"
-  },
-  "show_notification": true
+    "id": "thermal:energy_duct"
+  }
 }

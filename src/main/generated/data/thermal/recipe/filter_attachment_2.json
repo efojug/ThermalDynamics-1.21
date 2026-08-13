@@ -3,13 +3,13 @@
   "category": "misc",
   "key": {
     "G": {
-      "tag": "forge:glass"
+      "tag": "c:glass_blocks"
     },
     "I": {
-      "tag": "forge:ingots/iron"
+      "tag": "c:ingots/iron"
     },
     "N": {
-      "tag": "forge:nuggets/tin"
+      "tag": "c:nuggets/tin"
     },
     "P": {
       "item": "minecraft:paper"
@@ -21,7 +21,6 @@
   ],
   "result": {
     "count": 2,
-    "item": "thermal:filter_attachment"
-  },
-  "show_notification": true
+    "id": "thermal:filter_attachment"
+  }
 }

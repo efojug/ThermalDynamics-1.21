@@ -8,9 +8,8 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.network.PacketDistributor;
-import net.neoforged.neoforge.network.handling.PlayPayloadContext;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-import java.util.Optional;
 
 public class AttachmentRedstoneControlPacket {
 
@@ -21,23 +20,25 @@ public class AttachmentRedstoneControlPacket {
         return INSTANCE;
     }
 
-    public void handle(final AttachmentRedstoneControlPayload payload, final PlayPayloadContext context) {
+    public void handle(final AttachmentRedstoneControlPayload payload, final IPayloadContext context) {
 
-        context.workHandler().submitAsync(() -> {
+        context.enqueueWork(() -> {
 
-            Optional<Player> senderOptional = context.player();
-            if (senderOptional.isEmpty()) {
+            Player player = context.player();
+            if (player == null) {
                 return;
             }
-            Player player = senderOptional.get();
 
-            Level world = player.level;
+            Level world = player.level();
             if (!world.isLoaded(payload.pos())) {
                 return;
             }
             BlockEntity tile = world.getBlockEntity(payload.pos());
             if (tile instanceof IDuct<?, ?> duct && duct.getAttachment(payload.side()) instanceof IRedstoneControllableAttachment attachment) {
-                attachment.setControl(payload.threshold(), IRedstoneControllable.ControlMode.VALUES[payload.mode()]);
+                int mode = Byte.toUnsignedInt(payload.mode());
+                if (mode < IRedstoneControllable.ControlMode.VALUES.length) {
+                    attachment.setControl(payload.threshold(), IRedstoneControllable.ControlMode.VALUES[mode]);
+                }
             }
         });
     }
@@ -47,7 +48,7 @@ public class AttachmentRedstoneControlPacket {
         if (attachment == null) {
             return;
         }
-        PacketDistributor.SERVER.noArg().send(new AttachmentRedstoneControlPayload(attachment.pos(), attachment.side(), attachment.redstoneControl().getThreshold(), (byte) attachment.redstoneControl().getMode().ordinal()));
+        PacketDistributor.sendToServer(new AttachmentRedstoneControlPayload(attachment.pos(), attachment.side(), attachment.redstoneControl().getThreshold(), (byte) attachment.redstoneControl().getMode().ordinal()));
     }
 
 }

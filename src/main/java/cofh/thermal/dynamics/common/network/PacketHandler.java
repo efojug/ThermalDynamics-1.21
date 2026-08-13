@@ -8,23 +8,23 @@ import cofh.thermal.dynamics.common.network.packet.client.AttachmentControlPacke
 import cofh.thermal.dynamics.common.network.packet.client.GridDebugPacket;
 import cofh.thermal.dynamics.common.network.packet.server.AttachmentConfigPacket;
 import cofh.thermal.dynamics.common.network.packet.server.AttachmentRedstoneControlPacket;
-import net.neoforged.neoforge.network.event.RegisterPayloadHandlerEvent;
-import net.neoforged.neoforge.network.registration.IPayloadRegistrar;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
+import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
 import static cofh.lib.util.constants.ModIds.ID_THERMAL_DYNAMICS;
 
 public class PacketHandler {
 
-    public static void registerNetworking(final RegisterPayloadHandlerEvent event) {
+    public static void registerNetworking(final RegisterPayloadHandlersEvent event) {
 
-        final IPayloadRegistrar registrar = event.registrar(ID_THERMAL_DYNAMICS);
+        final PayloadRegistrar registrar = event.registrar(ID_THERMAL_DYNAMICS);
 
         // SERVER
-        registrar.play(AttachmentConfigPayload.ID, AttachmentConfigPayload::new, handler -> handler.server(AttachmentConfigPacket.get()::handle));
-        registrar.play(AttachmentRedstoneControlPayload.ID, AttachmentRedstoneControlPayload::new, handler -> handler.server(AttachmentRedstoneControlPacket.get()::handle));
+        registrar.playToServer(AttachmentConfigPayload.TYPE, AttachmentConfigPayload.STREAM_CODEC, AttachmentConfigPacket.get()::handle);
+        registrar.playToServer(AttachmentRedstoneControlPayload.TYPE, AttachmentRedstoneControlPayload.STREAM_CODEC, AttachmentRedstoneControlPacket.get()::handle);
 
         // CLIENT
-        registrar.play(AttachmentControlPayload.ID, AttachmentControlPayload::new, handler -> handler.client(AttachmentControlPacket.get()::handle));
-        registrar.play(GridDebugPayload.ID, GridDebugPayload::new, handler -> handler.client(GridDebugPacket.get()::handle));
+        registrar.playToClient(AttachmentControlPayload.TYPE, AttachmentControlPayload.STREAM_CODEC, AttachmentControlPacket.get()::handle);
+        registrar.playToClient(GridDebugPayload.TYPE, GridDebugPayload.STREAM_CODEC, GridDebugPacket.get()::handle);
     }
 }

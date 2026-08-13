@@ -51,7 +51,7 @@ public class FluidDuctBlockEntity extends DuctBlockEntity<FluidGrid, FluidGridNo
     @Override
     public boolean canConnectTo(IDuct<?, ?> other, Direction dir) {
 
-        if (!level.isClientSide && other.getGrid() instanceof FluidGrid otherGrid) {
+        if (!level.isClientSide() && other.getGrid() instanceof FluidGrid otherGrid) {
             FluidStack myFluid = getGrid().getFluid();
             FluidStack otherFluid = otherGrid.getFluid();
             if (!myFluid.isEmpty() && !otherFluid.isEmpty() && !FluidHelper.fluidsEqual(myFluid, otherFluid)) {

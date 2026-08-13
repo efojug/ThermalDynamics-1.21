@@ -12,6 +12,7 @@ import cofh.thermal.dynamics.common.network.packet.server.AttachmentConfigPacket
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
@@ -95,7 +96,7 @@ public class FluidFilterAttachmentMenu extends AttachmentMenu implements IFilter
         byte size = (byte) filter.getFluids().size();
         buffer.writeByte(size);
         for (int i = 0; i < size; ++i) {
-            buffer.writeFluidStack(getFilterStacks().get(i));
+            FluidStack.OPTIONAL_STREAM_CODEC.encode((RegistryFriendlyByteBuf) buffer, getFilterStacks().get(i));
         }
         return buffer;
     }
@@ -106,7 +107,7 @@ public class FluidFilterAttachmentMenu extends AttachmentMenu implements IFilter
         byte size = buffer.readByte();
         List<FluidStack> fluidStacks = new ArrayList<>(size);
         for (int i = 0; i < size; ++i) {
-            fluidStacks.add(buffer.readFluidStack());
+            fluidStacks.add(FluidStack.OPTIONAL_STREAM_CODEC.decode((RegistryFriendlyByteBuf) buffer));
         }
         filterInventory.readFromSource(fluidStacks);
     }

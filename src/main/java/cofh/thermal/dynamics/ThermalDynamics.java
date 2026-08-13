@@ -14,7 +14,6 @@ import cofh.thermal.dynamics.common.block.entity.duct.DuctBlockEntity;
 import cofh.thermal.dynamics.common.event.GridEvents;
 import cofh.thermal.dynamics.common.network.PacketHandler;
 import cofh.thermal.dynamics.init.registries.*;
-import net.minecraft.client.gui.screens.MenuScreens;
 import net.minecraft.client.renderer.ItemBlockRenderTypes;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.Direction;
@@ -29,6 +28,7 @@ import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.capabilities.BlockCapability;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
+import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -48,7 +48,7 @@ public class ThermalDynamics {
 
     public static final Logger LOG = LogManager.getLogger(ID_THERMAL_DYNAMICS);
 
-    public static final ResourceLocation GRID_REGISTRY_LOC = new ResourceLocation(ID_THERMAL_DYNAMICS, ID_GRID_TYPE);
+    public static final ResourceLocation GRID_REGISTRY_LOC = ResourceLocation.fromNamespaceAndPath(ID_THERMAL_DYNAMICS, ID_GRID_TYPE);
     public static final DeferredRegisterCoFH<IGridType<?>> GRIDS = DeferredRegisterCoFH.create(GRID_REGISTRY_LOC, ID_THERMAL_DYNAMICS);
 
     public static final Registry<IGridType<?>> GRID_TYPE_REGISTRY = GRIDS.makeRegistry(e -> e.sync(false));
@@ -59,6 +59,7 @@ public class ThermalDynamics {
 
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(this::clientSetup);
+        modEventBus.addListener(this::menuScreenSetup);
         modEventBus.addListener(this::capSetup);
 
         modEventBus.addListener(PacketHandler::registerNetworking);
@@ -90,8 +91,7 @@ public class ThermalDynamics {
 
     private void clientSetup(final FMLClientSetupEvent event) {
 
-        event.enqueueWork(this::registerGuiFactories);
-        event.enqueueWork(this::registerRenderLayers);
+                event.enqueueWork(this::registerRenderLayers);
         DebugRenderer.register();
     }
 
@@ -115,14 +115,14 @@ public class ThermalDynamics {
     // endregion
 
     // region HELPERS
-    private void registerGuiFactories() {
+    private void menuScreenSetup(final RegisterMenuScreensEvent event) {
 
-        MenuScreens.register(ITEM_BUFFER_CONTAINER.get(), ItemBufferScreen::new);
+        event.register(ITEM_BUFFER_CONTAINER.get(), ItemBufferScreen::new);
 
-        MenuScreens.register(ENERGY_LIMITER_ATTACHMENT_CONTAINER.get(), EnergyLimiterAttachmentScreen::new);
-        MenuScreens.register(FLUID_FILTER_ATTACHMENT_CONTAINER.get(), FluidFilterAttachmentScreen::new);
-        MenuScreens.register(FLUID_SERVO_ATTACHMENT_CONTAINER.get(), FluidServoAttachmentScreen::new);
-        MenuScreens.register(FLUID_TURBO_SERVO_ATTACHMENT_CONTAINER.get(), FluidTurboServoAttachmentScreen::new);
+        event.register(ENERGY_LIMITER_ATTACHMENT_CONTAINER.get(), EnergyLimiterAttachmentScreen::new);
+        event.register(FLUID_FILTER_ATTACHMENT_CONTAINER.get(), FluidFilterAttachmentScreen::new);
+        event.register(FLUID_SERVO_ATTACHMENT_CONTAINER.get(), FluidServoAttachmentScreen::new);
+        event.register(FLUID_TURBO_SERVO_ATTACHMENT_CONTAINER.get(), FluidTurboServoAttachmentScreen::new);
     }
 
     private void registerRenderLayers() {

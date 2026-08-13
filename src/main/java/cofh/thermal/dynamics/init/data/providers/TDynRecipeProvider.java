@@ -3,6 +3,7 @@ package cofh.thermal.dynamics.init.data.providers;
 import cofh.lib.init.data.RecipeProviderCoFH;
 import cofh.lib.init.tags.ItemTagsCoFH;
 import cofh.thermal.lib.util.references.ThermalTags;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.data.PackOutput;
 import net.minecraft.data.recipes.RecipeOutput;
 import net.minecraft.data.recipes.ShapedRecipeBuilder;
@@ -10,6 +11,8 @@ import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.common.Tags;
+
+import java.util.concurrent.CompletableFuture;
 
 import static cofh.lib.util.constants.ModIds.ID_THERMAL;
 import static cofh.thermal.core.ThermalCore.ITEMS;
@@ -19,9 +22,9 @@ import static net.minecraft.data.recipes.RecipeCategory.MISC;
 
 public class TDynRecipeProvider extends RecipeProviderCoFH {
 
-    public TDynRecipeProvider(PackOutput output) {
+    public TDynRecipeProvider(PackOutput output, CompletableFuture<HolderLookup.Provider> registries) {
 
-        super(output, ID_THERMAL);
+        super(output, registries, ID_THERMAL);
     }
 
     @Override
@@ -48,7 +51,7 @@ public class TDynRecipeProvider extends RecipeProviderCoFH {
                 .save(consumer);
 
         ShapedRecipeBuilder.shaped(BUILDING_BLOCKS, reg.get(ID_ENERGY_DUCT), 4)
-                .define('G', Tags.Items.GLASS)
+                .define('G', Tags.Items.GLASS_BLOCKS)
                 .define('L', ItemTagsCoFH.INGOTS_LEAD)
                 .define('R', Tags.Items.DUSTS_REDSTONE)
                 .pattern("RRR")
@@ -72,7 +75,7 @@ public class TDynRecipeProvider extends RecipeProviderCoFH {
                 .save(consumer, ID_THERMAL + ":fluid_duct_windowed_4");
 
         ShapedRecipeBuilder.shaped(BUILDING_BLOCKS, reg.get(ID_ENERGY_LIMITER_ATTACHMENT), 2)
-                .define('G', Tags.Items.GLASS)
+                .define('G', Tags.Items.GLASS_BLOCKS)
                 .define('I', ItemTagsCoFH.INGOTS_ELECTRUM)
                 .define('N', ItemTagsCoFH.NUGGETS_LEAD)
                 .define('R', Tags.Items.DUSTS_REDSTONE)
@@ -82,7 +85,7 @@ public class TDynRecipeProvider extends RecipeProviderCoFH {
                 .save(consumer, ID_THERMAL + ":energy_limiter_attachment_2");
 
         ShapedRecipeBuilder.shaped(MISC, reg.get(ID_FILTER_ATTACHMENT), 2)
-                .define('G', Tags.Items.GLASS)
+                .define('G', Tags.Items.GLASS_BLOCKS)
                 .define('I', Tags.Items.INGOTS_IRON)
                 .define('N', ItemTagsCoFH.NUGGETS_TIN)
                 .define('P', Items.PAPER)
@@ -92,7 +95,7 @@ public class TDynRecipeProvider extends RecipeProviderCoFH {
                 .save(consumer, ID_THERMAL + ":filter_attachment_2");
 
         ShapedRecipeBuilder.shaped(MISC, reg.get(ID_SERVO_ATTACHMENT), 2)
-                .define('G', Tags.Items.GLASS)
+                .define('G', Tags.Items.GLASS_BLOCKS)
                 .define('I', Tags.Items.INGOTS_IRON)
                 .define('N', ItemTagsCoFH.NUGGETS_TIN)
                 .define('R', Tags.Items.DUSTS_REDSTONE)
@@ -102,7 +105,7 @@ public class TDynRecipeProvider extends RecipeProviderCoFH {
                 .save(consumer, ID_THERMAL + ":servo_attachment_2");
 
         ShapedRecipeBuilder.shaped(MISC, reg.get(ID_TURBO_SERVO_ATTACHMENT), 2)
-                .define('G', Tags.Items.GLASS)
+                .define('G', Tags.Items.GLASS_BLOCKS)
                 .define('I', ItemTagsCoFH.INGOTS_INVAR)
                 .define('N', ItemTagsCoFH.NUGGETS_LEAD)
                 .define('R', redstoneServo)

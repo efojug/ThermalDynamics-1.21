@@ -24,7 +24,7 @@ import static cofh.lib.util.helpers.StringHelper.format;
 
 public class FluidServoAttachmentScreen extends ContainerScreenCoFH<FluidServoAttachmentMenu> {
 
-    public static final ResourceLocation TEXTURE = new ResourceLocation(PATH_GUI + "generic.png");
+    public static final ResourceLocation TEXTURE = ResourceLocation.parse(PATH_GUI + "generic.png");
 
     public static final String TEX_EXTRACT = ID_THERMAL + ":textures/gui/elements/info_extract_to_fluid_grid.png";
 
