@@ -40,14 +40,6 @@ public class DuctBakedModel implements IDynamicBakedModel {
         data.setInternalConnection(Direction.DOWN, true);
     });
 
-    public void clearCache() {
-
-        modelCache.clear();
-        centerFillCache.clear();
-        fillCache.clear();
-        attachmentCache.clear();
-    }
-
     private final IGeometryBakingContext context;
     private final TextureAtlasSprite particle;
     private final Map<Direction, List<BakedQuad>> centerModel;
@@ -60,6 +52,7 @@ public class DuctBakedModel implements IDynamicBakedModel {
     private final Map<TexColorWrapper, Map<Direction, List<BakedQuad>>> centerFillCache = new Object2ObjectOpenHashMap<>();
     private final Map<TexColorWrapper, Map<Direction, List<BakedQuad>>> fillCache = new Object2ObjectOpenHashMap<>();
     private final Map<ResourceLocation, Map<Direction, List<BakedQuad>>> attachmentCache = new Object2ObjectOpenHashMap<>();
+    private final Object cacheLock = new Object();
 
     public DuctBakedModel(IGeometryBakingContext context, TextureAtlasSprite particle, EnumMap<Direction, List<BakedQuad>> centerModel, EnumMap<Direction, List<BakedQuad>> centerFill, EnumMap<Direction, List<BakedQuad>> sides, EnumMap<Direction, List<BakedQuad>> fill, EnumMap<Direction, List<BakedQuad>> connections, boolean isInventory) {
 
@@ -71,6 +64,16 @@ public class DuctBakedModel implements IDynamicBakedModel {
         this.fill = ImmutableMap.copyOf(fill);
         this.connections = ImmutableMap.copyOf(connections);
         this.isInventory = isInventory;
+    }
+
+    public void clearCache() {
+
+        synchronized (cacheLock) {
+            modelCache.clear();
+            centerFillCache.clear();
+            fillCache.clear();
+            attachmentCache.clear();
+        }
     }
 
     @Override
@@ -92,12 +95,9 @@ public class DuctBakedModel implements IDynamicBakedModel {
 
     private List<BakedQuad> getModelFor(DuctModelData modelData) {
 
-        List<BakedQuad> modelQuads = modelCache.get(modelData);
-        if (!DEBUG && modelQuads != null) {
-            return modelQuads;
-        }
-        synchronized (modelCache) {
-            modelQuads = modelCache.get(modelData); // Another thread could have computed whilst we were locked.
+        // A DuctBakedModel instance is shared by parallel section-compilation workers.
+        synchronized (cacheLock) {
+            List<BakedQuad> modelQuads = modelCache.get(modelData);
             if (!DEBUG && modelQuads != null) return modelQuads;
             ImmutableList.Builder<BakedQuad> quads = ImmutableList.builder();
             for (Direction dir : DIRECTIONS) {

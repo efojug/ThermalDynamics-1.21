@@ -326,7 +326,8 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
 
         calcDuctModelDataClient();
         return ModelData.builder()
-                .with(DUCT_MODEL_DATA, modelData)
+                // ModelData is consumed by the parallel section renderer. Never expose this mutable working instance.
+                .with(DUCT_MODEL_DATA, new DuctModelData(modelData))
                 .build();
     }
 
@@ -399,8 +400,7 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
                 }
             }
         }
-        modelData.setNeedsRefresh();
-        requestModelDataUpdate();
+        refreshClientModels();
     }
     // endregion
 
@@ -435,9 +435,7 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
         }
         if (level != null && level.isClientSide()) {
             clientConnectionStateInitialized = bConn.length == 6;
-            // Connection data changed on the client: recompute the shape and refresh the model data.
-            modelData.setNeedsRefresh();
-            requestModelDataUpdate();
+            refreshClientModels();
         }
     }
 
@@ -524,6 +522,34 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
             TileRedstonePacket.sendToClient(this);
         }
         modelData.setNeedsRefresh();
+    }
+
+    /**
+     * A duct's model depends on both ends of a connection. Refresh the adjacent duct models when this
+     * client's connection data arrives, otherwise a neighbor may remain compiled as an uninitialized stub.
+     */
+    private void refreshClientModels() {
+
+        if (level == null || !level.isClientSide()) {
+            return;
+        }
+        refreshClientModel(this);
+        for (Direction dir : DIRECTIONS) {
+            if (level.getBlockEntity(worldPosition.relative(dir)) instanceof DuctBlockEntity<?, ?> adjacent) {
+                refreshClientModel(adjacent);
+            }
+        }
+    }
+
+    private static void refreshClientModel(DuctBlockEntity<?, ?> duct) {
+
+        duct.modelData.setNeedsRefresh();
+        duct.requestModelDataUpdate();
+        Level world = duct.level;
+        if (world != null) {
+            BlockState state = duct.getBlockState();
+            world.sendBlockUpdated(duct.worldPosition, state, state, Block.UPDATE_CLIENTS);
+        }
     }
 
     @Override

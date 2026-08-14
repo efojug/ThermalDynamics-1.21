@@ -36,6 +36,8 @@ public class DuctModelData {
 
         state = other.state;
         fill = other.fill;
+        fillColor = other.fillColor;
+        fillLuminous = other.fillLuminous;
         if (other.attachments != null) {
             attachments = other.attachments.clone();
         }
@@ -159,6 +161,7 @@ public class DuctModelData {
         DuctModelData that = (DuctModelData) o;
 
         if (state != that.state) return false;
+        if (fillColor != that.fillColor) return false;
         if (fillLuminous != that.fillLuminous) return false;
         if (!Objects.equals(fill, that.fill)) return false;
         return Arrays.equals(attachments, that.attachments);
@@ -170,6 +173,7 @@ public class DuctModelData {
         int result = state;
         result = 31 * result + (fill != null ? fill.hashCode() : 0);
         result = 31 * result + Arrays.hashCode(attachments);
+        result = 31 * result + fillColor;
         result = 31 * result + (fillLuminous ? 1 : 0);
         return result;
     }
