@@ -32,8 +32,15 @@ public class FluidDuctWindowedBlockEntity extends FluidDuctBlockEntity implement
     }
 
     @Override
+    public void onLoad() {
+
+        super.onLoad();
+    }
+
+    @Override
     public void update() {
 
+        renderFluid = getGrid().getRenderFluid();
         TileStatePacket.sendToClient(this);
     }
 
@@ -49,6 +56,7 @@ public class FluidDuctWindowedBlockEntity extends FluidDuctBlockEntity implement
 
         modelData.setFill(renderFluid.isEmpty() ? BLANK_TEXTURE : RenderHelper.getFluidTexture(renderFluid).contents().name());
         modelData.setFillColor(FluidHelper.color(renderFluid));
+        modelData.setFillLuminous(FluidHelper.luminosity(renderFluid) > 0);
         return super.getModelData();
     }
 
@@ -82,7 +90,6 @@ public class FluidDuctWindowedBlockEntity extends FluidDuctBlockEntity implement
     @Override
     public FriendlyByteBuf getStatePacket(FriendlyByteBuf buffer) {
 
-        renderFluid = getGrid().getRenderFluid();
         FluidStack.OPTIONAL_STREAM_CODEC.encode((RegistryFriendlyByteBuf) buffer, renderFluid);
 
         super.getStatePacket(buffer);
@@ -93,12 +100,8 @@ public class FluidDuctWindowedBlockEntity extends FluidDuctBlockEntity implement
     @Override
     public void handleStatePacket(FriendlyByteBuf buffer) {
 
-        int prevLight = getLightValue();
         renderFluid = FluidStack.OPTIONAL_STREAM_CODEC.decode((RegistryFriendlyByteBuf) buffer);
 
-        if (prevLight != getLightValue()) {
-            level.getChunkSource().getLightEngine().checkBlock(worldPosition);
-        }
         super.handleStatePacket(buffer);
     }
     // endregion

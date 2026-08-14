@@ -106,11 +106,11 @@ public class DuctBakedModel implements IDynamicBakedModel {
                 ResourceLocation attachment = modelData.getAttachment(dir);
 
                 if (!internal && !external) {
-                    List<BakedQuad> fillQuads = rebakeFill(centerFillCache, centerFill, modelData.getFill(), modelData.getFillColor(), dir);
+                    List<BakedQuad> fillQuads = rebakeFill(centerFillCache, centerFill, modelData.getFill(), modelData.getFillColor(), modelData.isFillLuminous(), dir);
                     quads.addAll(filterBlank(centerModel.get(dir), false));
                     quads.addAll(filterBlank(fillQuads, false));
                 } else {
-                    List<BakedQuad> fillQuads = rebakeFill(fillCache, fill, modelData.getFill(), modelData.getFillColor(), dir);
+                    List<BakedQuad> fillQuads = rebakeFill(fillCache, fill, modelData.getFill(), modelData.getFillColor(), modelData.isFillLuminous(), dir);
                     quads.addAll(filterBlank(sides.get(dir), !fillQuads.isEmpty()));
                     quads.addAll(filterBlank(fillQuads, false));
                     if (external) {
@@ -137,7 +137,7 @@ public class DuctBakedModel implements IDynamicBakedModel {
         return newQuads;
     }
 
-    private List<BakedQuad> rebakeFill(Map<TexColorWrapper, Map<Direction, List<BakedQuad>>> cache, Map<Direction, List<BakedQuad>> raw, @Nullable ResourceLocation texture, int color, Direction dir) {
+    private List<BakedQuad> rebakeFill(Map<TexColorWrapper, Map<Direction, List<BakedQuad>>> cache, Map<Direction, List<BakedQuad>> raw, @Nullable ResourceLocation texture, int color, boolean luminous, Direction dir) {
 
         // Easy bail if there are no quads.
         List<BakedQuad> fillQuads = raw.get(dir);
@@ -149,7 +149,7 @@ public class DuctBakedModel implements IDynamicBakedModel {
             return fillQuads;
         }
         // Is it cached already?
-        Map<Direction, List<BakedQuad>> retextured = cache.get(new TexColorWrapper(texture, color));
+        Map<Direction, List<BakedQuad>> retextured = cache.get(new TexColorWrapper(texture, color, luminous));
         if (retextured != null) {
             List<BakedQuad> quads = retextured.get(dir);
             // Sure is!
@@ -160,7 +160,7 @@ public class DuctBakedModel implements IDynamicBakedModel {
         // Whatever intellij, I know what im doing.
         //noinspection SynchronizationOnLocalVariableOrMethodParameter
         synchronized (cache) {
-            retextured = cache.get(new TexColorWrapper(texture, color)); // Another thread could have computed whilst we were locked.
+            retextured = cache.get(new TexColorWrapper(texture, color, luminous)); // Another thread could have computed whilst we were locked.
             if (retextured != null) {
                 List<BakedQuad> quads = retextured.get(dir);
                 // \o/ memory saved++
@@ -169,7 +169,7 @@ public class DuctBakedModel implements IDynamicBakedModel {
                 }
             } else {
                 retextured = new HashMap<>();
-                cache.put(new TexColorWrapper(texture, color), retextured);
+                cache.put(new TexColorWrapper(texture, color, luminous), retextured);
             }
 
             // Grab the sprite
@@ -181,7 +181,11 @@ public class DuctBakedModel implements IDynamicBakedModel {
             // Retexture
             List<BakedQuad> newQuads = new ArrayList<>(fillQuads.size());
             for (BakedQuad quad : fillQuads) {
-                newQuads.add(new RetexturedBakedQuad(RenderHelper.mulColor(quad, color), sprite));
+                BakedQuad retexturedQuad = new RetexturedBakedQuad(RenderHelper.mulColor(quad, color), sprite);
+                if (luminous) {
+                    retexturedQuad = net.neoforged.neoforge.client.model.QuadTransformers.settingMaxEmissivity().process(retexturedQuad);
+                }
+                newQuads.add(retexturedQuad);
             }
             // slap in cache.
             retextured.put(dir, newQuads);
@@ -244,17 +248,28 @@ public class DuctBakedModel implements IDynamicBakedModel {
 
         ResourceLocation texture;
         int color;
+        boolean luminous;
 
-        public TexColorWrapper(ResourceLocation texture, int color) {
+        public TexColorWrapper(ResourceLocation texture, int color, boolean luminous) {
 
             this.texture = texture;
             this.color = color;
+            this.luminous = luminous;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            TexColorWrapper that = (TexColorWrapper) o;
+            return color == that.color && luminous == that.luminous && Objects.equals(texture, that.texture);
         }
 
         @Override
         public int hashCode() {
 
-            return texture.hashCode() + color * 31;
+            return texture.hashCode() + color * 31 + (luminous ? 1 : 0);
         }
 
     }
