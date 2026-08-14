@@ -3,6 +3,7 @@ package cofh.thermal.dynamics.common.grid.energy;
 import cofh.core.util.helpers.EnergyHelper;
 import cofh.lib.common.energy.IRedstoneFluxStorage;
 import cofh.thermal.dynamics.api.helper.GridHelper;
+import cofh.thermal.dynamics.common.block.entity.duct.DuctBlockEntity;
 import cofh.thermal.dynamics.common.grid.Grid;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
@@ -97,8 +98,14 @@ public class EnergyGrid extends Grid<EnergyGrid, EnergyGridNode> implements IRed
     @Override
     public void refreshCapabilities() {
 
-        for (var node : getNodes().keySet()) {
-            getLevel().invalidateCapabilities(node);
+        for (var node : getNodes().entrySet()) {
+            if (!node.getValue().isLoaded()) {
+                continue;
+            }
+            if (getLevel().getBlockEntity(node.getKey()) instanceof DuctBlockEntity<?, ?> duct) {
+                duct.invalidateAttachments();
+            }
+            getLevel().invalidateCapabilities(node.getKey());
         }
     }
 
@@ -123,12 +130,18 @@ public class EnergyGrid extends Grid<EnergyGrid, EnergyGridNode> implements IRed
         isSendingEnergy = true;
         try {
             for (int i = nodeTracker; i < list.length && energy > 0; i++) {
+                if (!list[i].isLoaded()) {
+                    continue;
+                }
                 energy -= list[i].transmitEnergy(energy, simulate);
                 if (energy == 0) {
                     nodeTracker = i + 1;
                 }
             }
             for (int i = 0; i < list.length && i < nodeTracker && energy > 0; i++) {
+                if (!list[i].isLoaded()) {
+                    continue;
+                }
                 energy -= list[i].transmitEnergy(energy, simulate);
                 if (energy == 0) {
                     nodeTracker = i + 1;

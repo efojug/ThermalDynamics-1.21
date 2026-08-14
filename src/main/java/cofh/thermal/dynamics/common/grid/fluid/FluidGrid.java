@@ -5,6 +5,7 @@ import cofh.lib.util.TimeTracker;
 import cofh.thermal.dynamics.api.helper.GridHelper;
 import cofh.thermal.dynamics.common.block.entity.duct.DuctBlockEntity;
 import cofh.thermal.dynamics.common.grid.Grid;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
@@ -17,7 +18,9 @@ import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import static cofh.lib.util.Constants.BUCKET_VOLUME;
@@ -235,11 +238,14 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
     @Override
     public void refreshCapabilities() {
 
-        for (var node : getNodes().keySet()) {
-            if (getLevel().getBlockEntity(node) instanceof DuctBlockEntity<?, ?> duct) {
+        for (var node : getNodes().entrySet()) {
+            if (!node.getValue().isLoaded()) {
+                continue;
+            }
+            if (getLevel().getBlockEntity(node.getKey()) instanceof DuctBlockEntity<?, ?> duct) {
                 duct.invalidateAttachments();
             }
-            getLevel().invalidateCapabilities(node);
+            getLevel().invalidateCapabilities(node.getKey());
         }
     }
 
@@ -282,16 +288,23 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
         }
         int tempTracker = nodeTracker;
         int toSend = overflow;
+        Set<BlockPos> visitedTargets = new HashSet<>();
         isSendingFluid = true;
         try {
             for (int i = nodeTracker; i < list.length && toSend > 0; ++i) {
-                toSend -= list[i].transmitFluid(resource.copyWithAmount(toSend), action.simulate());
+                if (!list[i].isLoaded()) {
+                    continue;
+                }
+                toSend -= list[i].transmitFluid(resource.copyWithAmount(toSend), action.simulate(), visitedTargets);
                 if (toSend == 0) {
                     nodeTracker = i + 1;
                 }
             }
             for (int i = 0; i < list.length && i < nodeTracker && toSend > 0; ++i) {
-                toSend -= list[i].transmitFluid(resource.copyWithAmount(toSend), action.simulate());
+                if (!list[i].isLoaded()) {
+                    continue;
+                }
+                toSend -= list[i].transmitFluid(resource.copyWithAmount(toSend), action.simulate(), visitedTargets);
                 if (toSend == 0) {
                     nodeTracker = i + 1;
                 }

@@ -26,8 +26,10 @@ public class EnergyGridNode extends GridNode<EnergyGrid> implements ITickableGri
 
     protected void cacheConnections() {
 
+        Level world = getWorld();
         for (Direction dir : Direction.values()) {
-            if (grid.canConnectOnSide(pos.relative(dir), dir.getOpposite())) {
+            BlockPos targetPos = pos.relative(dir);
+            if (world.isLoaded(targetPos) && grid.canConnectOnSide(targetPos, dir.getOpposite())) {
                 connections.add(dir);
             }
         }
@@ -90,8 +92,12 @@ public class EnergyGridNode extends GridNode<EnergyGrid> implements ITickableGri
         if (duct.getConnectionType(dir) == DISABLED) {
             return 0;
         }
+        BlockPos targetPos = pos.relative(dir);
+        if (!world.isLoaded(targetPos)) {
+            return 0;
+        }
         IAttachment attachment = duct.getAttachment(dir);
-        BlockEntity tile = world.getBlockEntity(pos.relative(dir));
+        BlockEntity tile = world.getBlockEntity(targetPos);
         if (tile == null) {
             return 0;
         }
