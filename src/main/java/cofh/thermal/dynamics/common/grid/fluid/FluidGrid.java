@@ -5,6 +5,7 @@ import cofh.lib.util.TimeTracker;
 import cofh.thermal.dynamics.api.helper.GridHelper;
 import cofh.thermal.dynamics.common.block.entity.duct.DuctBlockEntity;
 import cofh.thermal.dynamics.common.grid.Grid;
+import com.google.common.graph.EndpointPair;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
@@ -24,7 +25,6 @@ import java.util.Set;
 import java.util.UUID;
 
 import static cofh.lib.util.Constants.BUCKET_VOLUME;
-import static cofh.lib.util.Constants.TANK_MEDIUM;
 import static cofh.thermal.dynamics.init.registries.TDynGrids.FLUID_GRID;
 
 /**
@@ -32,11 +32,11 @@ import static cofh.thermal.dynamics.init.registries.TDynGrids.FLUID_GRID;
  */
 public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidHandler {
 
-    protected static final int NODE_CAPACITY = 100;
+    protected static final int DUCT_CAPACITY = 3000;
 
     protected static final String TAG_STORAGE = "Storage";
 
-    protected final FluidGridStorage storage = new FluidGridStorage(NODE_CAPACITY);
+    protected final FluidGridStorage storage = new FluidGridStorage(0);
 
     protected FluidStack renderFluid = FluidStack.EMPTY;
     protected FluidStack prevRenderFluid = FluidStack.EMPTY;
@@ -65,8 +65,6 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
     @Override
     public void tick() {
 
-        storage.tick();
-
         if (distArray.length != getNodes().size()) {
             distArray = getNodes().values().toArray(new FluidGridNode[0]);
         }
@@ -85,18 +83,15 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
 
         for (int i = distIndex; i < distArray.length; ++i) {
             if (rrNodeTick(curIndex, i)) {
-                storage.postTick();
                 return;
             }
         }
         for (int i = 0; i < distIndex; ++i) {
             if (rrNodeTick(curIndex, i)) {
-                storage.postTick();
                 return;
             }
         }
         ++distIndex;
-        storage.postTick();
     }
 
     private void rrPreNodeTick(int i) {
@@ -144,7 +139,7 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
 
         distArray = new FluidGridNode[0];
         nodeList = new FluidGridNode[0];
-        storage.setBaseCapacity(Math.max(TANK_MEDIUM, getNodes().size() * NODE_CAPACITY));
+        recalculateCapacity();
         super.onModified();
     }
 
@@ -159,12 +154,12 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
     @Override
     public void onMerge(FluidGrid from) {
 
-        storage.setBaseCapacity(Math.max(TANK_MEDIUM, getNodes().size() * NODE_CAPACITY));
-        storage.setCapacity(this.getCapacity() + from.getCapacity());
+        long fluidAmount = (long) this.getFluidAmount() + from.getFluidAmount();
+        recalculateCapacity();
         if (storage.getFluid().isEmpty()) {
-            storage.setFluid(from.getFluid());
+            storage.setFluid(from.getFluid().copyWithAmount(saturatingInt(fluidAmount)));
         } else {
-            storage.setFluid(storage.getFluid().copyWithAmount(this.getFluidAmount() + from.getFluidAmount()));
+            storage.setFluid(storage.getFluid().copyWithAmount(saturatingInt(fluidAmount)));
         }
 
         needsUpdate = true;
@@ -176,30 +171,38 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
     @Override
     public void onSplit(List<FluidGrid> others) {
 
-        int totalNodes = 0;
+        int totalDucts = 0;
         for (FluidGrid grid : others) {
-            int gridNodes = grid.getNodes().size();
-            totalNodes += grid.getNodes().size();
-            grid.setBaseCapacity(Math.max(TANK_MEDIUM, gridNodes * NODE_CAPACITY));
-            grid.setCapacity(this.getCapacity());
+            totalDucts = saturatingInt((long) totalDucts + grid.getDuctCount());
+            grid.recalculateCapacity();
             if (!this.renderFluid.isEmpty()) {
                 grid.needsUpdate = true;
             }
             grid.refreshCapabilities();
         }
         this.refreshCapabilities();
-        if (getFluid().isEmpty()) {
+        if (getFluid().isEmpty() || totalDucts == 0) {
             return;
         }
-        int fluidPerNode = getFluid().getAmount() / totalNodes;
-        int remFluid = getFluid().getAmount() % totalNodes;
+        int fluidAmount = getFluid().getAmount();
+        int fluidPerDuct = fluidAmount / totalDucts;
+        int remainder = fluidAmount % totalDucts;
 
         for (FluidGrid grid : others) {
-            int gridNodes = grid.getNodes().size();
-            grid.setFluid(getFluid().copyWithAmount(fluidPerNode * gridNodes));
+            grid.setFluid(getFluid().copyWithAmount(saturatingInt((long) fluidPerDuct * grid.getDuctCount())));
         }
-        // First grid gets the extra. Why? Because there's always a first grid.
-        others.get(0).setFluid(getFluid().copyWithAmount(others.get(0).getFluid().getAmount() + remFluid));
+        for (FluidGrid grid : others) {
+            int available = grid.getCapacity() - grid.getFluidAmount();
+            if (available <= 0) {
+                continue;
+            }
+            int toAdd = Math.min(available, remainder);
+            grid.setFluid(getFluid().copyWithAmount(grid.getFluidAmount() + toAdd));
+            remainder -= toAdd;
+            if (remainder == 0) {
+                break;
+            }
+        }
     }
 
     @Override
@@ -216,6 +219,7 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
     public void deserializeNBT(HolderLookup.Provider provider, CompoundTag nbt) {
 
         super.deserializeNBT(provider, nbt);
+        recalculateCapacity();
         if (nbt.contains(TAG_STORAGE, CompoundTag.TAG_COMPOUND)) {
             storage.deserializeNBT(provider, nbt.getCompound(TAG_STORAGE));
         } else {
@@ -266,7 +270,6 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
     public FluidStack getFluid() { return storage.getFluid(); }
     public FluidStack getRenderFluid() { return renderFluid; }
     public int getFluidAmount() { return storage.getFluid().getAmount(); }
-    public void setBaseCapacity(int baseCapacity) { storage.setBaseCapacity(baseCapacity); }
     public void setCapacity(int capacity) { storage.setCapacity(capacity); }
     public void setFluid(FluidStack fluid) { storage.setFluid(fluid); }
 
@@ -334,5 +337,24 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
             isSendingFluid = false;
         }
         return added + (overflow - toSend);
+    }
+
+    private void recalculateCapacity() {
+
+        storage.setCapacity(saturatingInt((long) getDuctCount() * DUCT_CAPACITY));
+    }
+
+    private int getDuctCount() {
+
+        long count = nodeGraph.nodes().size();
+        for (EndpointPair<FluidGridNode> edge : nodeGraph.edges()) {
+            count += GridHelper.numBetween(edge.nodeU().getPos(), edge.nodeV().getPos());
+        }
+        return saturatingInt(count);
+    }
+
+    private static int saturatingInt(long value) {
+
+        return value > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) Math.max(0, value);
     }
 }

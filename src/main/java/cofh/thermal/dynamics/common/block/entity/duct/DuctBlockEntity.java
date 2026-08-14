@@ -22,6 +22,7 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
@@ -330,6 +331,12 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
     }
 
     // region NETWORK
+    @Nullable
+    @Override
+    public ClientboundBlockEntityDataPacket getUpdatePacket() {
+
+        return ClientboundBlockEntityDataPacket.create(this);
+    }
 
     // REDSTONE
     @Override

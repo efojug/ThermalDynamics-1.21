@@ -9,65 +9,30 @@ import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 
 import javax.annotation.Nonnull;
 
-import static cofh.lib.util.constants.NBTTags.TAG_CAPACITY;
-import static cofh.lib.util.constants.NBTTags.TAG_TRACK_OUT;
-
 public final class FluidGridStorage implements IFluidHandler, INBTSerializable<CompoundTag> {
 
-    private int baseCapacity;
     private int capacity;
 
     private FluidStack fluid = FluidStack.EMPTY;
 
-    private byte sampleTracker = 0;
+    public FluidGridStorage(int capacity) {
 
-    //    private final int[] samplesIn = new int[40];
-    //    private int rollingIn = 0;
-    //    private int averageIn = 0;
-
-    private final int[] samplesOut = new int[40];
-    private int rollingOut = 0;
-    private int averageOut = 0;
-
-    public FluidGridStorage(int baseCapacity) {
-
-        this.baseCapacity = baseCapacity;
-    }
-
-    public FluidGridStorage setBaseCapacity(int baseCapacity) {
-
-        this.baseCapacity = Math.max(0, baseCapacity);
-        //        if (!this.fluid.isEmpty()) {
-        //            this.fluid.setAmount(MathHelper.clamp(this.fluid.getAmount(), 0, baseCapacity));
-        //        }
-        return this;
+        this.capacity = Math.max(0, capacity);
     }
 
     public FluidGridStorage setCapacity(int capacity) {
 
-        this.capacity = capacity;
-        resetTrackers();
+        this.capacity = Math.max(0, capacity);
+        if (fluid.getAmount() > this.capacity) {
+            fluid = fluid.copyWithAmount(this.capacity);
+        }
         return this;
     }
 
     public FluidGridStorage setFluid(FluidStack fluid) {
 
-        this.fluid = fluid.copy();
-        //        if (!this.fluid.isEmpty()) {
-        //            this.fluid.setAmount(MathHelper.clamp(this.fluid.getAmount(), 0, baseCapacity));
-        //        }
+        this.fluid = fluid.copyWithAmount(Math.min(fluid.getAmount(), capacity));
         return this;
-    }
-
-    public void resetTrackers() {
-
-        sampleTracker = 0;
-
-        //        rollingIn = 0;
-        //        averageIn = 0;
-
-        rollingOut = 0;
-        averageOut = 0;
     }
 
     public int getCapacity() {
@@ -80,41 +45,6 @@ public final class FluidGridStorage implements IFluidHandler, INBTSerializable<C
         return fluid;
     }
 
-    public void tick() {
-
-        samplesOut[sampleTracker] = fluid.getAmount();
-    }
-
-    public void postTick() {
-
-        //        rollingIn += samplesIn[sampleTracker];
-        //        averageIn = rollingIn / samplesIn.length;
-
-        samplesOut[sampleTracker] -= fluid.getAmount();
-        rollingOut += samplesOut[sampleTracker];
-        averageOut = rollingOut / samplesOut.length;
-
-        ++sampleTracker;
-        if (sampleTracker >= samplesOut.length) {
-            sampleTracker = 0;
-            updateCapacity();
-
-            //            System.out.println("Average attempted input (2 seconds): " + averageIn);
-            //            System.out.println("Average realized output (2 seconds): " + averageOut);
-            //            System.out.println("Dynamic capacity:" + capacity);
-            //            System.out.println("Fluid stored:" + fluid.getAmount());
-        }
-        //        rollingIn -= samplesIn[sampleTracker];
-        //        samplesIn[sampleTracker] = 0;
-        rollingOut -= samplesOut[sampleTracker];
-        samplesOut[sampleTracker] = 0;
-    }
-
-    private void updateCapacity() {
-
-        this.capacity = Math.max(baseCapacity, 4 * averageOut);
-    }
-
     // region NBT
     public FluidGridStorage read(HolderLookup.Provider provider, CompoundTag nbt) {
 
@@ -123,12 +53,6 @@ public final class FluidGridStorage implements IFluidHandler, INBTSerializable<C
         if (nbt.getTagType("id") == Tag.TAG_STRING) {
             setFluid(FluidStack.parseOptional(provider, nbt));
         }
-        this.baseCapacity = nbt.getInt(TAG_CAPACITY);
-
-        //        this.averageIn = nbt.getInt(TAG_TRACK_IN);
-        this.averageOut = nbt.getInt(TAG_TRACK_OUT);
-
-        updateCapacity();
         return this;
     }
 
@@ -137,11 +61,6 @@ public final class FluidGridStorage implements IFluidHandler, INBTSerializable<C
         if (!fluid.isEmpty()) {
             nbt.merge((CompoundTag) fluid.save(provider, new CompoundTag()));
         }
-        nbt.putInt(TAG_CAPACITY, baseCapacity);
-
-        //        nbt.putInt(TAG_TRACK_IN, averageIn);
-        nbt.putInt(TAG_TRACK_OUT, averageOut);
-
         return nbt;
     }
 
