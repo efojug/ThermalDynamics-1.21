@@ -474,6 +474,17 @@ public abstract class Grid<G extends Grid<G, N>, N extends GridNode<G>> implemen
     }
 
     /**
+     * Checks whether the specified grid can be merged into this grid.
+     *
+     * @param from The other grid.
+     * @return Whether the grids may be merged.
+     */
+    public boolean canMerge(G from) {
+
+        return true;
+    }
+
+    /**
      * Called when the specified grid is merged into us.
      * <p>
      * This is provided for Grid implementations to merge the internal state

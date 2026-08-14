@@ -149,11 +149,23 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
     }
 
     @Override
+    public boolean canMerge(FluidGrid from) {
+
+        FluidStack fluid = getFluid();
+        FluidStack fromFluid = from.getFluid();
+        return fluid.isEmpty() || fromFluid.isEmpty() || FluidStack.isSameFluidSameComponents(fluid, fromFluid);
+    }
+
+    @Override
     public void onMerge(FluidGrid from) {
 
         storage.setBaseCapacity(Math.max(TANK_MEDIUM, getNodes().size() * NODE_CAPACITY));
         storage.setCapacity(this.getCapacity() + from.getCapacity());
-        storage.setFluid(storage.getFluid().copyWithAmount(this.getFluidAmount() + from.getFluidAmount()));
+        if (storage.getFluid().isEmpty()) {
+            storage.setFluid(from.getFluid());
+        } else {
+            storage.setFluid(storage.getFluid().copyWithAmount(this.getFluidAmount() + from.getFluidAmount()));
+        }
 
         needsUpdate = true;
 

@@ -55,6 +55,7 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
     protected ConnectionType[] connections = {ALLOWED, ALLOWED, ALLOWED, ALLOWED, ALLOWED, ALLOWED};
     protected IAttachment[] attachments = {EmptyAttachment.INSTANCE, EmptyAttachment.INSTANCE, EmptyAttachment.INSTANCE, EmptyAttachment.INSTANCE, EmptyAttachment.INSTANCE, EmptyAttachment.INSTANCE};
 
+    protected boolean clientConnectionStateInitialized;
     protected int redstonePower;
 
     public DuctBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
@@ -309,7 +310,10 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
         modelData.clearState();
         for (Direction dir : DIRECTIONS) {
             IDuct<?, ?> adjacent = GridHelper.getGridHost(level, getBlockPos().relative(dir));
-            modelData.setInternalConnection(dir, adjacent != null && canConnectTo(adjacent, dir) && adjacent.canConnectTo(this, dir.getOpposite()));
+            boolean adjacentInitialized = !(adjacent instanceof DuctBlockEntity<?, ?> duct) || duct.clientConnectionStateInitialized;
+            modelData.setInternalConnection(dir, clientConnectionStateInitialized && adjacentInitialized && adjacent != null &&
+                    connections[dir.ordinal()].allowDuctConnection() && adjacent.getConnectionType(dir.getOpposite()).allowDuctConnection() &&
+                    canConnectTo(adjacent, dir) && adjacent.canConnectTo(this, dir.getOpposite()));
             modelData.setExternalConnection(dir, canConnectToBlock(dir) || connections[dir.ordinal()] == FORCED);
             modelData.setAttachment(dir, attachments[dir.ordinal()].getTexture());
         }
@@ -375,6 +379,7 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
         for (int i = 0; i < 6; ++i) {
             connections[i] = ConnectionType.VALUES[buffer.readByte()];
         }
+        clientConnectionStateInitialized = true;
         CompoundTag tag = buffer.readNbt();
 
         if (tag != null) {
@@ -422,6 +427,7 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
             }
         }
         if (level != null && level.isClientSide()) {
+            clientConnectionStateInitialized = bConn.length == 6;
             // Connection data changed on the client: recompute the shape and refresh the model data.
             modelData.setNeedsRefresh();
             requestModelDataUpdate();

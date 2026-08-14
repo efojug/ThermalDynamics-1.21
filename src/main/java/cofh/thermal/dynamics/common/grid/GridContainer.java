@@ -121,7 +121,11 @@ public class GridContainer extends SavedData implements IGridContainer {
 
             if (other.getGrid() != host.getGrid()) {
                 // Merge into the other grid.
-                mergeGrids(List.of(otherHost, host));
+                if (!mergeGrids(List.of(otherHost, host))) {
+                    host.setConnectionType(dir, ConnectionType.DISABLED);
+                    other.setConnectionType(dir.getOpposite(), ConnectionType.DISABLED);
+                    continue;
+                }
             }
 
             G grid = otherHost.getGrid();
@@ -147,7 +151,7 @@ public class GridContainer extends SavedData implements IGridContainer {
         grid.onModified();
     }
 
-    private <G extends Grid<G, N>, N extends GridNode<G>> void mergeGrids(List<IDuct<G, N>> branches) {
+    private <G extends Grid<G, N>, N extends GridNode<G>> boolean mergeGrids(List<IDuct<G, N>> branches) {
 
         Set<G> grids = new HashSet<>();
         for (IDuct<G, N> branch : branches) {
@@ -160,6 +164,11 @@ public class GridContainer extends SavedData implements IGridContainer {
 
         grids.remove(main);
         for (G other : grids) {
+            if (!canMerge(main, other)) {
+                return false;
+            }
+        }
+        for (G other : grids) {
             Set<N> toBeMoved = new HashSet<>(other.nodeGraph.nodes());
             main.mergeFrom(other);
             replaceGridLookup(main, other, toBeMoved);
@@ -167,6 +176,7 @@ public class GridContainer extends SavedData implements IGridContainer {
             this.loadedGrids.remove(other.getId());
         }
         main.onModified();
+        return true;
     }
 
     @Override
@@ -321,6 +331,10 @@ public class GridContainer extends SavedData implements IGridContainer {
             return true; // Nothing to do.
         }
 
+        if (connecting && aGrid != bGrid && !canMerge(aGrid, bGrid)) {
+            return false;
+        }
+
         N a = aGrid.getNodeOrSplitEdgeAndInsertNode(host.getHostPos());
         N b = bGrid.getNodeOrSplitEdgeAndInsertNode(other.getHostPos());
 
@@ -332,7 +346,9 @@ public class GridContainer extends SavedData implements IGridContainer {
 
             // Perform grid merge.
             if (aGrid != bGrid) {
-                mergeGrids(Arrays.asList(host, other));
+                if (!mergeGrids(Arrays.asList(host, other))) {
+                    return false;
+                }
                 aGrid = a.getGrid();
             }
 
@@ -428,6 +444,11 @@ public class GridContainer extends SavedData implements IGridContainer {
         grids.remove(grid.getId());
         loadedGrids.remove(grid.getId());
         return true;
+    }
+
+    private <G extends Grid<G, ?>> boolean canMerge(G a, G b) {
+
+        return a.canMerge(unsafeCast(b)) && b.canMerge(unsafeCast(a));
     }
 
     // region EVENT CALLBACKS
