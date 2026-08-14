@@ -4,6 +4,7 @@ import cofh.lib.api.IConveyableData;
 import cofh.lib.util.helpers.MathHelper;
 import cofh.thermal.dynamics.api.grid.IDuct;
 import cofh.thermal.dynamics.common.inventory.attachment.EnergyLimiterAttachmentMenu;
+import cofh.thermal.dynamics.common.network.packet.server.AttachmentConfigPacket;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
@@ -34,13 +35,17 @@ public class EnergyLimiterAttachment implements IAttachment, IRedstoneControllab
 
     public static final Component DISPLAY_NAME = Component.translatable("attachment.thermal.energy_limiter");
 
-    public final int MAX_TRANSFER = 64000;
+    private static final String TAG_LIMIT_ENABLED = "LimitEnabled";
+
+    public final int MAX_TRANSFER = 256000;
 
     protected final IDuct<?, ?> duct;
     protected final Direction side;
 
     public int amountInput = MAX_TRANSFER / 2;
     public int amountOutput = MAX_TRANSFER / 2;
+
+    protected boolean limitEnabled = true;
 
     protected RedstoneControlLogic rsControl = new RedstoneControlLogic(this);
 
@@ -56,6 +61,22 @@ public class EnergyLimiterAttachment implements IAttachment, IRedstoneControllab
     public int getMaxTransfer() {
 
         return MAX_TRANSFER;
+    }
+
+    public boolean isLimitEnabled() {
+
+        return limitEnabled;
+    }
+
+    public void setLimitEnabled(boolean limitEnabled) {
+
+        this.limitEnabled = limitEnabled;
+        AttachmentConfigPacket.sendToServer(this);
+    }
+
+    public void updateLimitEnabled(boolean limitEnabled) {
+
+        this.limitEnabled = limitEnabled;
     }
 
     @Override
@@ -87,6 +108,7 @@ public class EnergyLimiterAttachment implements IAttachment, IRedstoneControllab
 
         amountInput = nbt.getInt(TAG_AMOUNT_IN);
         amountOutput = nbt.getInt(TAG_AMOUNT_OUT);
+        limitEnabled = !nbt.contains(TAG_LIMIT_ENABLED) || nbt.getBoolean(TAG_LIMIT_ENABLED);
 
         return this;
     }
@@ -100,6 +122,7 @@ public class EnergyLimiterAttachment implements IAttachment, IRedstoneControllab
 
         nbt.putInt(TAG_AMOUNT_IN, amountInput);
         nbt.putInt(TAG_AMOUNT_OUT, amountOutput);
+        nbt.putBoolean(TAG_LIMIT_ENABLED, limitEnabled);
 
         return nbt;
     }
@@ -139,7 +162,7 @@ public class EnergyLimiterAttachment implements IAttachment, IRedstoneControllab
                 return (T) gridCap;
             }
             if (gridCapIn instanceof IEnergyStorage storage) {
-                gridCap = new WrappedEnergyStorage(storage, () -> rsControl.getState() ? amountInput : 0, () -> rsControl.getState() ? amountOutput : 0);
+                gridCap = new WrappedEnergyStorage(storage, this::getInputLimit, this::getOutputLimit);
                 return (T) gridCap;
             }
         }
@@ -156,7 +179,7 @@ public class EnergyLimiterAttachment implements IAttachment, IRedstoneControllab
                 return (T) extCap;
             }
             if (extCapIn instanceof IEnergyStorage storage) {
-                extCap = new WrappedEnergyStorage(storage, () -> rsControl.getState() ? amountOutput : 0, () -> rsControl.getState() ? amountInput : 0);
+                extCap = new WrappedEnergyStorage(storage, this::getOutputLimit, this::getInputLimit);
                 return (T) extCap;
             }
         }
@@ -167,6 +190,7 @@ public class EnergyLimiterAttachment implements IAttachment, IRedstoneControllab
     @Override
     public FriendlyByteBuf getConfigPacket(FriendlyByteBuf buffer) {
 
+        buffer.writeBoolean(limitEnabled);
         buffer.writeInt(amountInput);
         buffer.writeInt(amountOutput);
 
@@ -176,8 +200,14 @@ public class EnergyLimiterAttachment implements IAttachment, IRedstoneControllab
     @Override
     public void handleConfigPacket(FriendlyByteBuf buffer) {
 
+        boolean previousLimitEnabled = limitEnabled;
+        limitEnabled = buffer.readBoolean();
         amountInput = MathHelper.clamp(buffer.readInt(), 0, getMaxTransfer());
         amountOutput = MathHelper.clamp(buffer.readInt(), 0, getMaxTransfer());
+
+        if (limitEnabled != previousLimitEnabled) {
+            onControlUpdate();
+        }
     }
 
     @Override
@@ -185,6 +215,7 @@ public class EnergyLimiterAttachment implements IAttachment, IRedstoneControllab
 
         rsControl.writeToBuffer(buffer);
 
+        buffer.writeBoolean(limitEnabled);
         buffer.writeInt(amountInput);
         buffer.writeInt(amountOutput);
 
@@ -196,6 +227,7 @@ public class EnergyLimiterAttachment implements IAttachment, IRedstoneControllab
 
         rsControl.readFromBuffer(buffer);
 
+        limitEnabled = buffer.readBoolean();
         amountInput = MathHelper.clamp(buffer.readInt(), 0, getMaxTransfer());
         amountOutput = MathHelper.clamp(buffer.readInt(), 0, getMaxTransfer());
     }
@@ -214,6 +246,9 @@ public class EnergyLimiterAttachment implements IAttachment, IRedstoneControllab
     public void readConveyableData(Player player, CompoundTag tag) {
 
         rsControl.readSettings(tag);
+        if (tag.contains(TAG_LIMIT_ENABLED)) {
+            limitEnabled = tag.getBoolean(TAG_LIMIT_ENABLED);
+        }
 
         onControlUpdate();
     }
@@ -222,8 +257,19 @@ public class EnergyLimiterAttachment implements IAttachment, IRedstoneControllab
     public void writeConveyableData(Player player, CompoundTag tag) {
 
         rsControl.writeSettings(tag);
+        tag.putBoolean(TAG_LIMIT_ENABLED, limitEnabled);
     }
     // endregion
+
+    protected int getInputLimit() {
+
+        return rsControl.getState() ? (limitEnabled ? amountInput : Integer.MAX_VALUE) : 0;
+    }
+
+    protected int getOutputLimit() {
+
+        return rsControl.getState() ? (limitEnabled ? amountOutput : Integer.MAX_VALUE) : 0;
+    }
 
     // region WRAPPER CLASS
     private static class WrappedEnergyStorage implements IEnergyStorage {

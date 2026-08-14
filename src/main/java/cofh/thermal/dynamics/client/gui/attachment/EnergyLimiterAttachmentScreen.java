@@ -4,6 +4,7 @@ import cofh.core.client.gui.ContainerScreenCoFH;
 import cofh.core.client.gui.element.ElementBase;
 import cofh.core.client.gui.element.ElementButton;
 import cofh.core.client.gui.element.ElementTexture;
+import cofh.core.client.gui.element.SimpleTooltip;
 import cofh.core.client.gui.element.panel.RSControlPanel;
 import cofh.core.util.helpers.GuiHelper;
 import cofh.thermal.dynamics.common.attachment.EnergyLimiterAttachment;
@@ -30,6 +31,9 @@ public class EnergyLimiterAttachmentScreen extends ContainerScreenCoFH<EnergyLim
 
     public static final String TEX_INCREMENT = ID_COFH_CORE + ":textures/gui/elements/button_increment.png";
     public static final String TEX_DECREMENT = ID_COFH_CORE + ":textures/gui/elements/button_decrement.png";
+
+    public static final String TEX_LIMIT_DISABLED = ID_THERMAL + ":textures/gui/container/item_buffer_mode_normal.png";
+    public static final String TEX_LIMIT_ENABLED = ID_THERMAL + ":textures/gui/container/item_buffer_mode_latch.png";
 
     protected final EnergyLimiterAttachment attachment;
 
@@ -73,6 +77,35 @@ public class EnergyLimiterAttachmentScreen extends ContainerScreenCoFH<EnergyLim
     // region ELEMENTS
     protected void addButtons() {
 
+        addElement(new ElementButton(this, 78, 56) {
+
+            @Override
+            public boolean mouseClicked(double mouseX, double mouseY, int mouseButton) {
+
+                attachment.setLimitEnabled(true);
+                playClickSound(0.7F);
+                return true;
+            }
+        }
+                .setSize(20, 20)
+                .setTexture(TEX_LIMIT_DISABLED, 40, 20)
+                .setTooltipFactory(new SimpleTooltip(Component.translatable("info.thermal.energy_limiter_attachment.limiting.0")))
+                .setVisible(() -> !attachment.isLimitEnabled()));
+
+        addElement(new ElementButton(this, 78, 56) {
+
+            @Override
+            public boolean mouseClicked(double mouseX, double mouseY, int mouseButton) {
+
+                attachment.setLimitEnabled(false);
+                playClickSound(0.4F);
+                return true;
+            }
+        }
+                .setSize(20, 20)
+                .setTexture(TEX_LIMIT_ENABLED, 40, 20)
+                .setTooltipFactory(new SimpleTooltip(Component.translatable("info.thermal.energy_limiter_attachment.limiting.1")))
+                .setVisible(attachment::isLimitEnabled));
         ElementBase decInput = new ElementButton(this, 35, 56) {
 
             @Override
@@ -93,7 +126,7 @@ public class EnergyLimiterAttachmentScreen extends ContainerScreenCoFH<EnergyLim
                 .setTooltipFactory(GuiHelper::createDecControlTooltip)
                 .setSize(14, 14)
                 .setTexture(TEX_DECREMENT, 42, 14)
-                .setEnabled(() -> attachment.amountInput > 0);
+                .setEnabled(() -> attachment.isLimitEnabled() && attachment.amountInput > 0);
 
         ElementBase incInput = new ElementButton(this, 51, 56) {
 
@@ -115,7 +148,7 @@ public class EnergyLimiterAttachmentScreen extends ContainerScreenCoFH<EnergyLim
                 .setTooltipFactory(GuiHelper::createIncControlTooltip)
                 .setSize(14, 14)
                 .setTexture(TEX_INCREMENT, 42, 14)
-                .setEnabled(() -> attachment.amountInput < attachment.getMaxTransfer());
+                .setEnabled(() -> attachment.isLimitEnabled() && attachment.amountInput < attachment.getMaxTransfer());
 
         ElementBase decOutput = new ElementButton(this, 111, 56) {
 
@@ -137,7 +170,7 @@ public class EnergyLimiterAttachmentScreen extends ContainerScreenCoFH<EnergyLim
                 .setTooltipFactory(GuiHelper::createDecControlTooltip)
                 .setSize(14, 14)
                 .setTexture(TEX_DECREMENT, 42, 14)
-                .setEnabled(() -> attachment.amountOutput > 0);
+                .setEnabled(() -> attachment.isLimitEnabled() && attachment.amountOutput > 0);
 
         ElementBase incOutput = new ElementButton(this, 127, 56) {
 
@@ -159,7 +192,7 @@ public class EnergyLimiterAttachmentScreen extends ContainerScreenCoFH<EnergyLim
                 .setTooltipFactory(GuiHelper::createIncControlTooltip)
                 .setSize(14, 14)
                 .setTexture(TEX_INCREMENT, 42, 14)
-                .setEnabled(() -> attachment.amountOutput < attachment.getMaxTransfer());
+                .setEnabled(() -> attachment.isLimitEnabled() && attachment.amountOutput < attachment.getMaxTransfer());
 
         addElement(decInput);
         addElement(incInput);

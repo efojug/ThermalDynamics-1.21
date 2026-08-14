@@ -46,6 +46,7 @@ public class EnergyLimiterAttachmentMenu extends AttachmentMenu {
     @Override
     public FriendlyByteBuf getGuiPacket(FriendlyByteBuf buffer) {
 
+        buffer.writeBoolean(attachment.isLimitEnabled());
         buffer.writeInt(attachment.amountInput);
         buffer.writeInt(attachment.amountOutput);
 
@@ -55,6 +56,7 @@ public class EnergyLimiterAttachmentMenu extends AttachmentMenu {
     @Override
     public void handleGuiPacket(FriendlyByteBuf buffer) {
 
+        attachment.updateLimitEnabled(buffer.readBoolean());
         attachment.amountInput = buffer.readInt();
         attachment.amountOutput = buffer.readInt();
     }

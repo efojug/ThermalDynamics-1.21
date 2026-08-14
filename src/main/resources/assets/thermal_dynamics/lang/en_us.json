@@ -21,6 +21,9 @@
   "info.thermal.energy_limiter_attachment.1": "Can be configured to allow different amounts in each direction.",
   "info.thermal.energy_limiter_attachment.2": "Hold §e§oShift§r and/or §e§oCtrl§r to fine tune amounts.",
 
+  "info.thermal.energy_limiter_attachment.limiting.0": "Limiting: Disabled",
+  "info.thermal.energy_limiter_attachment.limiting.1": "Limiting: Enabled",
+
   "info.thermal.filter_attachment.mode.0": "Bidirectional Filtering",
   "info.thermal.filter_attachment.mode.1": "Outbound (From Duct) Filtering",
   "info.thermal.filter_attachment.mode.2": "Inbound (To Duct) Filtering",
