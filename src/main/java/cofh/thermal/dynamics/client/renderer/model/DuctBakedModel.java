@@ -6,7 +6,6 @@ import cofh.lib.client.renderer.block.model.RetexturedBakedQuad;
 import cofh.thermal.dynamics.client.model.data.DuctModelData;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.RenderType;
@@ -26,6 +25,8 @@ import org.jetbrains.annotations.NotNull;
 
 import javax.annotation.Nullable;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 import static cofh.lib.util.Constants.DIRECTIONS;
 import static cofh.thermal.core.client.ThermalTextures.BLANK_TEXTURE;
@@ -48,11 +49,7 @@ public class DuctBakedModel implements IDynamicBakedModel {
     private final Map<Direction, List<BakedQuad>> fill;
     private final Map<Direction, List<BakedQuad>> connections;
     private final boolean isInventory;
-    private final Map<DuctModelData, List<BakedQuad>> modelCache = new HashMap<>();
-    private final Map<TexColorWrapper, Map<Direction, List<BakedQuad>>> centerFillCache = new Object2ObjectOpenHashMap<>();
-    private final Map<TexColorWrapper, Map<Direction, List<BakedQuad>>> fillCache = new Object2ObjectOpenHashMap<>();
-    private final Map<ResourceLocation, Map<Direction, List<BakedQuad>>> attachmentCache = new Object2ObjectOpenHashMap<>();
-    private final Object cacheLock = new Object();
+    private volatile CacheState cacheState = new CacheState();
 
     public DuctBakedModel(IGeometryBakingContext context, TextureAtlasSprite particle, EnumMap<Direction, List<BakedQuad>> centerModel, EnumMap<Direction, List<BakedQuad>> centerFill, EnumMap<Direction, List<BakedQuad>> sides, EnumMap<Direction, List<BakedQuad>> fill, EnumMap<Direction, List<BakedQuad>> connections, boolean isInventory) {
 
@@ -68,12 +65,8 @@ public class DuctBakedModel implements IDynamicBakedModel {
 
     public void clearCache() {
 
-        synchronized (cacheLock) {
-            modelCache.clear();
-            centerFillCache.clear();
-            fillCache.clear();
-            attachmentCache.clear();
-        }
+        // In-flight section compilers retain the old state and cannot repopulate the new cache with stale atlas data.
+        cacheState = new CacheState();
     }
 
     @Override
@@ -95,33 +88,41 @@ public class DuctBakedModel implements IDynamicBakedModel {
 
     private List<BakedQuad> getModelFor(DuctModelData modelData) {
 
-        // A DuctBakedModel instance is shared by parallel section-compilation workers.
-        synchronized (cacheLock) {
-            List<BakedQuad> modelQuads = modelCache.get(modelData);
-            if (!DEBUG && modelQuads != null) return modelQuads;
-            ImmutableList.Builder<BakedQuad> quads = ImmutableList.builder();
-            for (Direction dir : DIRECTIONS) {
-                boolean internal = modelData.hasInternalConnection(dir);
-                boolean external = modelData.hasExternalConnection(dir);
-                ResourceLocation attachment = modelData.getAttachment(dir);
+        // Model data is mutable, so never use the caller-owned instance as a concurrent cache key.
+        DuctModelData cacheKey = new DuctModelData(modelData);
+        while (true) {
+            CacheState state = cacheState;
+            List<BakedQuad> modelQuads = DEBUG
+                    ? bakeModel(state, cacheKey)
+                    : state.modelCache.computeIfAbsent(cacheKey, key -> bakeModel(state, key));
+            if (state == cacheState) {
+                return modelQuads;
+            }
+        }
+    }
 
-                if (!internal && !external) {
-                    List<BakedQuad> fillQuads = rebakeFill(centerFillCache, centerFill, modelData.getFill(), modelData.getFillColor(), modelData.isFillLuminous(), dir);
-                    quads.addAll(filterBlank(centerModel.get(dir), false));
-                    quads.addAll(filterBlank(fillQuads, false));
-                } else {
-                    List<BakedQuad> fillQuads = rebakeFill(fillCache, fill, modelData.getFill(), modelData.getFillColor(), modelData.isFillLuminous(), dir);
-                    quads.addAll(filterBlank(sides.get(dir), !fillQuads.isEmpty()));
-                    quads.addAll(filterBlank(fillQuads, false));
-                    if (external) {
-                        quads.addAll(filterBlank(rebakeAttachment(attachmentCache, connections, attachment, dir), true));
-                    }
+    private List<BakedQuad> bakeModel(CacheState state, DuctModelData modelData) {
+
+        ImmutableList.Builder<BakedQuad> quads = ImmutableList.builder();
+        for (Direction dir : DIRECTIONS) {
+            boolean internal = modelData.hasInternalConnection(dir);
+            boolean external = modelData.hasExternalConnection(dir);
+            ResourceLocation attachment = modelData.getAttachment(dir);
+
+            if (!internal && !external) {
+                List<BakedQuad> fillQuads = rebakeFill(state.centerFillCache, centerFill, modelData.getFill(), modelData.getFillColor(), modelData.isFillLuminous(), dir);
+                quads.addAll(filterBlank(centerModel.get(dir), false));
+                quads.addAll(filterBlank(fillQuads, false));
+            } else {
+                List<BakedQuad> fillQuads = rebakeFill(state.fillCache, fill, modelData.getFill(), modelData.getFillColor(), modelData.isFillLuminous(), dir);
+                quads.addAll(filterBlank(sides.get(dir), !fillQuads.isEmpty()));
+                quads.addAll(filterBlank(fillQuads, false));
+                if (external) {
+                    quads.addAll(filterBlank(rebakeAttachment(state.attachmentCache, connections, attachment, dir), true));
                 }
             }
-            modelQuads = quads.build();
-            modelCache.put(new DuctModelData(modelData), modelQuads);
-            return modelQuads;
         }
+        return quads.build();
     }
 
     private List<BakedQuad> filterBlank(List<BakedQuad> quads, boolean cullBack) {
@@ -137,7 +138,7 @@ public class DuctBakedModel implements IDynamicBakedModel {
         return newQuads;
     }
 
-    private List<BakedQuad> rebakeFill(Map<TexColorWrapper, Map<Direction, List<BakedQuad>>> cache, Map<Direction, List<BakedQuad>> raw, @Nullable ResourceLocation texture, int color, boolean luminous, Direction dir) {
+    private List<BakedQuad> rebakeFill(ConcurrentMap<FillCacheKey, List<BakedQuad>> cache, Map<Direction, List<BakedQuad>> raw, @Nullable ResourceLocation texture, int color, boolean luminous, Direction dir) {
 
         // Easy bail if there are no quads.
         List<BakedQuad> fillQuads = raw.get(dir);
@@ -148,52 +149,27 @@ public class DuctBakedModel implements IDynamicBakedModel {
         if (texture == null) {
             return fillQuads;
         }
-        // Is it cached already?
-        Map<Direction, List<BakedQuad>> retextured = cache.get(new TexColorWrapper(texture, color, luminous));
-        if (retextured != null) {
-            List<BakedQuad> quads = retextured.get(dir);
-            // Sure is!
-            if (quads != null) {
-                return quads;
-            }
-        }
-        // Whatever intellij, I know what im doing.
-        //noinspection SynchronizationOnLocalVariableOrMethodParameter
-        synchronized (cache) {
-            retextured = cache.get(new TexColorWrapper(texture, color, luminous)); // Another thread could have computed whilst we were locked.
-            if (retextured != null) {
-                List<BakedQuad> quads = retextured.get(dir);
-                // \o/ memory saved++
-                if (quads != null) {
-                    return quads;
-                }
-            } else {
-                retextured = new HashMap<>();
-                cache.put(new TexColorWrapper(texture, color, luminous), retextured);
-            }
-
+        return cache.computeIfAbsent(new FillCacheKey(texture, color, luminous, dir), key -> {
             // Grab the sprite
             TextureAtlasSprite sprite = Minecraft.getInstance()
                     .getModelManager()
                     .getAtlas(InventoryMenu.BLOCK_ATLAS)
-                    .getSprite(texture);
+                    .getSprite(key.texture());
 
             // Retexture
             List<BakedQuad> newQuads = new ArrayList<>(fillQuads.size());
             for (BakedQuad quad : fillQuads) {
-                BakedQuad retexturedQuad = new RetexturedBakedQuad(RenderHelper.mulColor(quad, color), sprite);
-                if (luminous) {
+                BakedQuad retexturedQuad = new RetexturedBakedQuad(RenderHelper.mulColor(quad, key.color()), sprite);
+                if (key.luminous()) {
                     retexturedQuad = net.neoforged.neoforge.client.model.QuadTransformers.settingMaxEmissivity().process(retexturedQuad);
                 }
                 newQuads.add(retexturedQuad);
             }
-            // slap in cache.
-            retextured.put(dir, newQuads);
-            return newQuads;
-        }
+            return ImmutableList.copyOf(newQuads);
+        });
     }
 
-    private List<BakedQuad> rebakeAttachment(Map<ResourceLocation, Map<Direction, List<BakedQuad>>> cache, Map<Direction, List<BakedQuad>> raw, @Nullable ResourceLocation texture, Direction dir) {
+    private List<BakedQuad> rebakeAttachment(ConcurrentMap<AttachmentCacheKey, List<BakedQuad>> cache, Map<Direction, List<BakedQuad>> raw, @Nullable ResourceLocation texture, Direction dir) {
 
         // Easy bail if there are no quads.
         List<BakedQuad> connQuads = raw.get(dir);
@@ -204,74 +180,34 @@ public class DuctBakedModel implements IDynamicBakedModel {
         if (texture == null) {
             return connQuads;
         }
-        // Is it cached already?
-        Map<Direction, List<BakedQuad>> retextured = cache.get(texture);
-        if (retextured != null) {
-            List<BakedQuad> quads = retextured.get(dir);
-            // Sure is!
-            if (quads != null) {
-                return quads;
-            }
-        }
-        // Whatever intelliJ, I know what im doing.
-        //noinspection SynchronizationOnLocalVariableOrMethodParameter
-        synchronized (cache) {
-            retextured = cache.get(texture); // Another thread could have computed whilst we were locked.
-            if (retextured != null) {
-                List<BakedQuad> quads = retextured.get(dir);
-                // \o/ memory saved++
-                if (quads != null) {
-                    return quads;
-                }
-            } else {
-                retextured = new HashMap<>();
-                cache.put(texture, retextured);
-            }
+        return cache.computeIfAbsent(new AttachmentCacheKey(texture, dir), key -> {
             // Grab the sprite
             TextureAtlasSprite sprite = Minecraft.getInstance()
                     .getModelManager()
                     .getAtlas(InventoryMenu.BLOCK_ATLAS)
-                    .getSprite(texture);
+                    .getSprite(key.texture());
 
             // Retexture
             List<BakedQuad> newQuads = new ArrayList<>(connQuads.size());
             for (BakedQuad quad : connQuads) {
                 newQuads.add(new RetexturedBakedQuad(quad, sprite));
             }
-            // slap in cache.
-            retextured.put(dir, newQuads);
-            return newQuads;
-        }
+            return ImmutableList.copyOf(newQuads);
+        });
     }
 
-    private static class TexColorWrapper {
+    private static class CacheState {
 
-        ResourceLocation texture;
-        int color;
-        boolean luminous;
+        private final ConcurrentMap<DuctModelData, List<BakedQuad>> modelCache = new ConcurrentHashMap<>();
+        private final ConcurrentMap<FillCacheKey, List<BakedQuad>> centerFillCache = new ConcurrentHashMap<>();
+        private final ConcurrentMap<FillCacheKey, List<BakedQuad>> fillCache = new ConcurrentHashMap<>();
+        private final ConcurrentMap<AttachmentCacheKey, List<BakedQuad>> attachmentCache = new ConcurrentHashMap<>();
+    }
 
-        public TexColorWrapper(ResourceLocation texture, int color, boolean luminous) {
+    private record FillCacheKey(ResourceLocation texture, int color, boolean luminous, Direction direction) {
+    }
 
-            this.texture = texture;
-            this.color = color;
-            this.luminous = luminous;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            TexColorWrapper that = (TexColorWrapper) o;
-            return color == that.color && luminous == that.luminous && Objects.equals(texture, that.texture);
-        }
-
-        @Override
-        public int hashCode() {
-
-            return texture.hashCode() + color * 31 + (luminous ? 1 : 0);
-        }
-
+    private record AttachmentCacheKey(ResourceLocation texture, Direction direction) {
     }
 
     //@formatter:off
