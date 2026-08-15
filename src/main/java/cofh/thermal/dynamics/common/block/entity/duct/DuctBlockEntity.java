@@ -148,6 +148,7 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
         }
         attachments[side.ordinal()] = attachment;
         connections[side.ordinal()] = FORCED;
+        getGrid().onAttachmentsChanged();
 
         ItemStack offhand = player.getItemInHand(InteractionHand.OFF_HAND);
         if (offhand.has(DataComponents.CUSTOM_DATA) && offhand.getItem() instanceof RedprintItem) {
@@ -172,6 +173,7 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
             attachments[side.ordinal()] = EmptyAttachment.INSTANCE;
             IDuct<?, ?> adjacent = GridHelper.getGridHost(level, getBlockPos().relative(side));
             connections[side.ordinal()] = adjacent == null ? ALLOWED : DISABLED;
+            getGrid().onAttachmentsChanged();
             setChanged();
             callNeighborStateChange();
             level.invalidateCapabilities(worldPosition);
@@ -557,6 +559,9 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
 
         modelData.setNeedsRefresh();
         setChanged();
+        if (level != null && !level.isClientSide()) {
+            getGrid().onAttachmentsChanged();
+        }
         callNeighborStateChange();
         ModelUpdatePacket.sendToClient(getLevel(), getBlockPos());
     }

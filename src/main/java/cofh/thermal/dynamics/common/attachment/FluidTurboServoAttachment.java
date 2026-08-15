@@ -111,6 +111,12 @@ public class FluidTurboServoAttachment implements IFilterableAttachment, IRedsto
     }
 
     @Override
+    public boolean needsTick() {
+
+        return true;
+    }
+
+    @Override
     public ItemStack getItem() {
 
         return new ItemStack(ITEMS.get(ID_TURBO_SERVO_ATTACHMENT));

@@ -6,8 +6,9 @@ import cofh.thermal.dynamics.common.attachment.IAttachment;
 import cofh.thermal.dynamics.common.grid.GridNode;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.entity.BlockEntity;
+import net.neoforged.neoforge.capabilities.BlockCapabilityCache;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
@@ -22,7 +23,7 @@ import static net.neoforged.neoforge.fluids.capability.IFluidHandler.FluidAction
 
 public class FluidGridNode extends GridNode<FluidGrid> implements ITickableGridNode {
 
-    protected Direction[] distArray = new Direction[0];
+    protected FluidConnection[] distArray = new FluidConnection[0];
     protected int distIndex = 0;
 
     protected FluidGridNode(FluidGrid grid) {
@@ -33,13 +34,17 @@ public class FluidGridNode extends GridNode<FluidGrid> implements ITickableGridN
     protected void cacheConnections() {
 
         Level world = getWorld();
+        if (!(world instanceof ServerLevel serverLevel)) {
+            return;
+        }
+        connections.clear();
         for (Direction dir : DIRECTIONS) {
             BlockPos targetPos = pos.relative(dir);
             if (world.isLoaded(targetPos) && grid.canConnectOnSide(targetPos, dir.getOpposite())) {
                 connections.add(dir);
             }
         }
-        distArray = connections.toArray(new Direction[0]);
+        distArray = connections.stream().map(dir -> new FluidConnection(serverLevel, dir, pos.relative(dir))).toArray(FluidConnection[]::new);
         cached = true;
     }
 
@@ -51,8 +56,25 @@ public class FluidGridNode extends GridNode<FluidGrid> implements ITickableGridN
             return;
         }
         for (Direction dir : DIRECTIONS) {
-            duct.getAttachment(dir).tick();
+            IAttachment attachment = duct.getAttachment(dir);
+            if (attachment.needsTick()) {
+                attachment.tick();
+            }
         }
+    }
+
+    public boolean needsAttachmentTick() {
+
+        IDuct<?, ?> duct = gridHost();
+        if (duct == null) {
+            return false;
+        }
+        for (Direction dir : DIRECTIONS) {
+            if (duct.getAttachment(dir).needsTick()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
@@ -66,39 +88,35 @@ public class FluidGridNode extends GridNode<FluidGrid> implements ITickableGridN
         if (duct != null && distArray.length > 0) {
             ++distIndex;
             distIndex %= distArray.length;
-            Level world = getWorld();
-
             for (int i = distIndex; i < distArray.length; ++i) {
-                tickDir(world, pos, duct, distArray[i]);
+                tickDir(duct, distArray[i]);
             }
             for (int i = 0; i < distIndex; ++i) {
-                tickDir(world, pos, duct, distArray[i]);
+                tickDir(duct, distArray[i]);
             }
         }
     }
 
-    public int transmitFluid(FluidStack fluid, boolean simulate, Set<BlockPos> visitedTargets) {
+    public int transmitFluid(FluidStack fluid, int amount, boolean simulate, Set<BlockPos> visitedTargets) {
 
         if (!cached) {
             cacheConnections();
         }
         IDuct<?, ?> duct = gridHost();
-        if (duct == null || distArray.length == 0 || fluid.isEmpty()) {
+        if (duct == null || distArray.length == 0 || fluid.isEmpty() || amount <= 0) {
             return 0;
         }
-        Level world = getWorld();
         FluidAction action = simulate ? SIMULATE : EXECUTE;
-        int amount = fluid.getAmount();
         int remaining = amount;
         int tempIndex = distIndex;
         ++distIndex;
         distIndex %= distArray.length;
 
         for (int i = distIndex; i < distArray.length && remaining > 0; ++i) {
-            remaining -= fillDir(world, pos, duct, distArray[i], fluid.copyWithAmount(remaining), action, visitedTargets);
+            remaining -= fillDir(duct, distArray[i], fluid, remaining, action, visitedTargets);
         }
         for (int i = 0; i < distIndex && remaining > 0; ++i) {
-            remaining -= fillDir(world, pos, duct, distArray[i], fluid.copyWithAmount(remaining), action, visitedTargets);
+            remaining -= fillDir(duct, distArray[i], fluid, remaining, action, visitedTargets);
         }
         if (simulate) {
             distIndex = tempIndex;
@@ -106,39 +124,62 @@ public class FluidGridNode extends GridNode<FluidGrid> implements ITickableGridN
         return amount - remaining;
     }
 
-    private void tickDir(Level world, BlockPos pos, IDuct<?, ?> duct, Direction dir) {
+    private void tickDir(IDuct<?, ?> duct, FluidConnection connection) {
 
         FluidStack fluid = grid.getFluid();
-        int accepted = fillDir(world, pos, duct, dir, fluid.copyWithAmount(fluid.getAmount()), EXECUTE, null);
+        int accepted = fillDir(duct, connection, fluid, fluid.getAmount(), EXECUTE, null);
         if (accepted > 0) {
             grid.drain(accepted, EXECUTE);
         }
     }
 
-    private int fillDir(Level world, BlockPos pos, IDuct<?, ?> duct, Direction dir, FluidStack fluid, FluidAction action, Set<BlockPos> visitedTargets) {
+    private int fillDir(IDuct<?, ?> duct, FluidConnection connection, FluidStack fluid, int amount, FluidAction action, Set<BlockPos> visitedTargets) {
 
+        Direction dir = connection.direction;
         if (duct.getConnectionType(dir) == DISABLED) {
             return 0;
         }
-        BlockPos targetPos = pos.relative(dir);
-        if (!world.isLoaded(targetPos) || visitedTargets != null && visitedTargets.contains(targetPos)) {
+        if (visitedTargets != null && visitedTargets.contains(connection.targetPos)) {
             return 0;
         }
         IAttachment attachment = duct.getAttachment(dir);
-        BlockEntity tile = world.getBlockEntity(targetPos);
-        if (tile == null) {
-            return 0;
+        if (connection.consumeInvalidation()) {
+            attachment.invalidate();
         }
         IFluidHandler handler = attachment.wrapExternalCapability(Capabilities.FluidHandler.BLOCK,
-                world.getCapability(Capabilities.FluidHandler.BLOCK, tile.getBlockPos(), tile.getBlockState(), tile, dir.getOpposite()));
+                connection.capabilityCache.getCapability());
         if (handler != null) {
-            int accepted = handler.fill(fluid, action);
+            int accepted = handler.fill(amount == fluid.getAmount() ? fluid : fluid.copyWithAmount(amount), action);
             if (accepted > 0 && visitedTargets != null) {
-                visitedTargets.add(targetPos);
+                visitedTargets.add(connection.targetPos);
             }
             return accepted;
         }
         return 0;
+    }
+
+    private final class FluidConnection {
+
+        private final Direction direction;
+        private final BlockPos targetPos;
+        private final BlockCapabilityCache<IFluidHandler, Direction> capabilityCache;
+        private boolean invalidated;
+
+        private FluidConnection(ServerLevel world, Direction direction, BlockPos targetPos) {
+
+            this.direction = direction;
+            this.targetPos = targetPos;
+            capabilityCache = BlockCapabilityCache.create(Capabilities.FluidHandler.BLOCK, world, targetPos, direction.getOpposite(),
+                    () -> cached && isLoaded(), () -> invalidated = true);
+        }
+
+        private boolean consumeInvalidation() {
+
+            boolean result = invalidated;
+            invalidated = false;
+            return result;
+        }
+
     }
 
 }

@@ -53,6 +53,14 @@ public interface IAttachment extends INBTSerializable<CompoundTag> {
 
     }
 
+    /**
+     * Whether this attachment needs to be included in the grid's per-tick attachment pass.
+     */
+    default boolean needsTick() {
+
+        return false;
+    }
+
     default ItemStack getItem() {
 
         return ItemStack.EMPTY;

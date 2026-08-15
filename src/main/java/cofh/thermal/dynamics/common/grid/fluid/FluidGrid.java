@@ -19,9 +19,9 @@ import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
-import java.util.HashSet;
+import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 import static cofh.lib.util.Constants.BUCKET_VOLUME;
@@ -39,7 +39,6 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
     protected final FluidGridStorage storage = new FluidGridStorage(0);
 
     protected FluidStack renderFluid = FluidStack.EMPTY;
-    protected FluidStack prevRenderFluid = FluidStack.EMPTY;
     protected TimeTracker timeTracker = new TimeTracker();
     protected boolean wasFilled;
     protected boolean needsUpdate;
@@ -47,9 +46,13 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
     protected FluidGridNode[] distArray = new FluidGridNode[0];
     protected int distIndex = 0;
 
+    protected FluidGridNode[] attachmentNodeList = new FluidGridNode[0];
+    protected boolean attachmentNodesDirty = true;
+
     protected FluidGridNode[] nodeList = new FluidGridNode[0];
     protected int nodeTracker = 0;
     protected boolean isSendingFluid = false;
+    protected final ObjectOpenHashSet<BlockPos> visitedTargets = new ObjectOpenHashSet<>();
 
     public FluidGrid(UUID id, Level world) {
 
@@ -68,16 +71,18 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
         if (distArray.length != getNodes().size()) {
             distArray = getNodes().values().toArray(new FluidGridNode[0]);
         }
+        if (attachmentNodesDirty) {
+            rebuildAttachmentNodeList();
+        }
         int curIndex = distIndex;
 
         if (distIndex >= distArray.length) {
             distIndex = 0;
         }
-        for (int i = distIndex; i < distArray.length; ++i) {
-            rrPreNodeTick(i);
-        }
-        for (int i = 0; i < distIndex; ++i) {
-            rrPreNodeTick(i);
+        for (FluidGridNode node : attachmentNodeList) {
+            if (node.isLoaded()) {
+                node.attachmentTick();
+            }
         }
         renderUpdate();
 
@@ -92,13 +97,6 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
             }
         }
         ++distIndex;
-    }
-
-    private void rrPreNodeTick(int i) {
-
-        if (distArray[i].isLoaded()) {
-            distArray[i].attachmentTick();
-        }
     }
 
     private boolean rrNodeTick(int curIndex, int i) {
@@ -119,10 +117,13 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
 
     private void renderUpdate() {
 
-        prevRenderFluid = renderFluid;
-        renderFluid = getFluid().copyWithAmount(BUCKET_VOLUME);
+        FluidStack fluid = getFluid();
+        boolean renderFluidChanged = !FluidHelper.fluidsEqual(renderFluid, fluid);
+        if (renderFluidChanged) {
+            renderFluid = fluid.isEmpty() ? FluidStack.EMPTY : fluid.copyWithAmount(BUCKET_VOLUME);
+        }
 
-        if (!FluidHelper.fluidsEqual(prevRenderFluid, renderFluid) || wasFilled && timeTracker.hasDelayPassed(world, 40) || needsUpdate) {
+        if (renderFluidChanged || wasFilled && timeTracker.hasDelayPassed(world, 40) || needsUpdate) {
             if (!wasFilled && renderFluid.isEmpty()) {
                 timeTracker.markTime(world);
                 wasFilled = true;
@@ -139,8 +140,16 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
 
         distArray = new FluidGridNode[0];
         nodeList = new FluidGridNode[0];
+        attachmentNodeList = new FluidGridNode[0];
+        attachmentNodesDirty = true;
         recalculateCapacity();
         super.onModified();
+    }
+
+    @Override
+    public void onAttachmentsChanged() {
+
+        attachmentNodesDirty = true;
     }
 
     @Override
@@ -303,14 +312,14 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
         }
         int tempTracker = nodeTracker;
         int toSend = overflow;
-        Set<BlockPos> visitedTargets = new HashSet<>();
+        visitedTargets.clear();
         isSendingFluid = true;
         try {
             for (int i = nodeTracker; i < list.length && toSend > 0; ++i) {
                 if (!list[i].isLoaded()) {
                     continue;
                 }
-                toSend -= list[i].transmitFluid(resource.copyWithAmount(toSend), action.simulate(), visitedTargets);
+                toSend -= list[i].transmitFluid(resource, toSend, action.simulate(), visitedTargets);
                 if (toSend == 0) {
                     nodeTracker = i + 1;
                 }
@@ -319,7 +328,7 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
                 if (!list[i].isLoaded()) {
                     continue;
                 }
-                toSend -= list[i].transmitFluid(resource.copyWithAmount(toSend), action.simulate(), visitedTargets);
+                toSend -= list[i].transmitFluid(resource, toSend, action.simulate(), visitedTargets);
                 if (toSend == 0) {
                     nodeTracker = i + 1;
                 }
@@ -335,8 +344,21 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
             }
         } finally {
             isSendingFluid = false;
+            visitedTargets.clear();
         }
         return added + (overflow - toSend);
+    }
+
+    private void rebuildAttachmentNodeList() {
+
+        List<FluidGridNode> tickableNodes = new ArrayList<>();
+        for (FluidGridNode node : getNodes().values()) {
+            if (node.needsAttachmentTick()) {
+                tickableNodes.add(node);
+            }
+        }
+        attachmentNodeList = tickableNodes.toArray(new FluidGridNode[0]);
+        attachmentNodesDirty = false;
     }
 
     private void recalculateCapacity() {

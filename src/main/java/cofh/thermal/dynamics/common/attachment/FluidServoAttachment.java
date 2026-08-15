@@ -130,6 +130,12 @@ public class FluidServoAttachment implements IFilterableAttachment, IRedstoneCon
     }
 
     @Override
+    public boolean needsTick() {
+
+        return true;
+    }
+
+    @Override
     public ItemStack getItem() {
 
         return new ItemStack(ITEMS.get(ID_SERVO_ATTACHMENT));

@@ -6,8 +6,9 @@ import cofh.thermal.dynamics.common.attachment.IAttachment;
 import cofh.thermal.dynamics.common.grid.GridNode;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.entity.BlockEntity;
+import net.neoforged.neoforge.capabilities.BlockCapabilityCache;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.energy.IEnergyStorage;
 
@@ -16,7 +17,7 @@ import static cofh.thermal.dynamics.api.grid.IDuct.ConnectionType.DISABLED;
 
 public class EnergyGridNode extends GridNode<EnergyGrid> implements ITickableGridNode {
 
-    protected Direction[] distArray = new Direction[0];
+    protected EnergyConnection[] distArray = new EnergyConnection[0];
     protected int distIndex = 0;
 
     protected EnergyGridNode(EnergyGrid grid) {
@@ -27,13 +28,17 @@ public class EnergyGridNode extends GridNode<EnergyGrid> implements ITickableGri
     protected void cacheConnections() {
 
         Level world = getWorld();
+        if (!(world instanceof ServerLevel serverLevel)) {
+            return;
+        }
+        connections.clear();
         for (Direction dir : Direction.values()) {
             BlockPos targetPos = pos.relative(dir);
             if (world.isLoaded(targetPos) && grid.canConnectOnSide(targetPos, dir.getOpposite())) {
                 connections.add(dir);
             }
         }
-        distArray = connections.toArray(new Direction[0]);
+        distArray = connections.stream().map(dir -> new EnergyConnection(serverLevel, dir, pos.relative(dir))).toArray(EnergyConnection[]::new);
         cached = true;
     }
 
@@ -72,14 +77,12 @@ public class EnergyGridNode extends GridNode<EnergyGrid> implements ITickableGri
         int tempIndex = distIndex;
         ++distIndex;
         distIndex %= distArray.length;
-        Level world = getWorld();
-
         int accepted = 0;
         for (int i = distIndex; i < distArray.length && accepted < energy; ++i) {
-            accepted += transmitEnergyDir(world, pos, duct, distArray[i], energy - accepted, simulate);
+            accepted += transmitEnergyDir(duct, distArray[i], energy - accepted, simulate);
         }
         for (int i = 0; i < distIndex && accepted < energy; ++i) {
-            accepted += transmitEnergyDir(world, pos, duct, distArray[i], energy - accepted, simulate);
+            accepted += transmitEnergyDir(duct, distArray[i], energy - accepted, simulate);
         }
         if (simulate) {
             distIndex = tempIndex;
@@ -87,26 +90,44 @@ public class EnergyGridNode extends GridNode<EnergyGrid> implements ITickableGri
         return accepted;
     }
 
-    private int transmitEnergyDir(Level world, BlockPos pos, IDuct<?, ?> duct, Direction dir, int amount, boolean simulate) {
+    private int transmitEnergyDir(IDuct<?, ?> duct, EnergyConnection connection, int amount, boolean simulate) {
 
+        Direction dir = connection.direction;
         if (duct.getConnectionType(dir) == DISABLED) {
             return 0;
         }
-        BlockPos targetPos = pos.relative(dir);
-        if (!world.isLoaded(targetPos)) {
-            return 0;
-        }
         IAttachment attachment = duct.getAttachment(dir);
-        BlockEntity tile = world.getBlockEntity(targetPos);
-        if (tile == null) {
-            return 0;
+        if (connection.consumeInvalidation()) {
+            attachment.invalidate();
         }
         IEnergyStorage storage = attachment.wrapExternalCapability(Capabilities.EnergyStorage.BLOCK,
-                world.getCapability(Capabilities.EnergyStorage.BLOCK, tile.getBlockPos(), tile.getBlockState(), tile, dir.getOpposite()));
+                connection.capabilityCache.getCapability());
         if (storage == null) {
             return 0;
         }
         return storage.receiveEnergy(amount, simulate);
+    }
+
+    private final class EnergyConnection {
+
+        private final Direction direction;
+        private final BlockCapabilityCache<IEnergyStorage, Direction> capabilityCache;
+        private boolean invalidated;
+
+        private EnergyConnection(ServerLevel world, Direction direction, BlockPos targetPos) {
+
+            this.direction = direction;
+            capabilityCache = BlockCapabilityCache.create(Capabilities.EnergyStorage.BLOCK, world, targetPos, direction.getOpposite(),
+                    () -> cached && isLoaded(), () -> invalidated = true);
+        }
+
+        private boolean consumeInvalidation() {
+
+            boolean result = invalidated;
+            invalidated = false;
+            return result;
+        }
+
     }
 
 }

@@ -43,11 +43,7 @@ public class EnergyGrid extends Grid<EnergyGrid, EnergyGridNode> implements IRed
     @Override
     public void tick() {
 
-        super.tick();
-
-        if (nodeList.length != getNodes().size()) {
-            nodeList = getNodes().values().toArray(new EnergyGridNode[0]);
-        }
+        // Connections are initialized by receiveEnergy when a grid actually receives energy.
     }
 
     @Override

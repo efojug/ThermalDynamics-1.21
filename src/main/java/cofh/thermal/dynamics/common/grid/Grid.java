@@ -464,6 +464,13 @@ public abstract class Grid<G extends Grid<G, N>, N extends GridNode<G>> implemen
         }
     }
 
+    /**
+     * Called when a host adds, removes, or reconfigures an attachment.
+     */
+    public void onAttachmentsChanged() {
+
+    }
+
     protected void updateHosts() {
 
         for (BlockPos pos : updatableHosts) {
