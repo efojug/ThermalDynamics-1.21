@@ -139,6 +139,12 @@ shadowJar {
     relocate 'net.covers1624.quack', 'cofh.requack'
 }
 
+// The plain jar is intentionally disabled; make the published universal artifact part of the
+// normal Gradle lifecycle so `build` cannot succeed without producing the mod jar.
+tasks.named('assemble') {
+    dependsOn tasks.named('shadowJar')
+}
+
 tasks.register("signShadowJar") {
     dependsOn("shadowJar")
 
