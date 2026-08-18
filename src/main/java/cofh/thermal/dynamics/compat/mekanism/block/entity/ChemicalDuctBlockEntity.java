@@ -18,7 +18,6 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.neoforged.neoforge.client.model.data.ModelData;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import javax.annotation.Nonnull;
 
@@ -34,11 +33,8 @@ public class ChemicalDuctBlockEntity extends DuctBlockEntity<ChemicalGrid, Chemi
 
     private ChemicalStack renderChemical = ChemicalStack.EMPTY;
     private int renderAlpha = 0xFF;
-
-    public ChemicalDuctBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
-
-        super(type, pos, state);
-    }
+    private ChemicalStack lastModelChemical = ChemicalStack.EMPTY;
+    private int lastModelAlpha = Integer.MIN_VALUE;
 
     public ChemicalDuctBlockEntity(BlockPos pos, BlockState state) {
 
@@ -74,9 +70,14 @@ public class ChemicalDuctBlockEntity extends DuctBlockEntity<ChemicalGrid, Chemi
     @Override
     public ModelData getModelData() {
 
-        modelData.setFill(renderChemical.isEmpty() ? BLANK_TEXTURE : renderChemical.getChemical().getIcon());
-        modelData.setFillColor(renderChemical.isEmpty() ? 0xFFFFFFFF : renderAlpha * 99 / 100 << 24 | renderChemical.getChemicalTint() & 0xFFFFFF);
-        modelData.setFillLuminous(false);
+        if (!ChemicalStack.isSameChemical(lastModelChemical, renderChemical) || lastModelAlpha != renderAlpha) {
+            lastModelChemical = renderChemical.isEmpty() ? ChemicalStack.EMPTY : renderChemical.copy();
+            lastModelAlpha = renderAlpha;
+            modelData.setFill(renderChemical.isEmpty() ? BLANK_TEXTURE : renderChemical.getChemical().getIcon());
+            modelData.setFillColor(renderChemical.isEmpty() ? 0xFFFFFFFF : renderAlpha * 99 / 100 << 24 | renderChemical.getChemicalTint() & 0xFFFFFF);
+            modelData.setFillLuminous(false);
+            modelData.setNeedsRefresh();
+        }
         return super.getModelData();
     }
 

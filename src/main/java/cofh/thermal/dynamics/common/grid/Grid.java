@@ -2,6 +2,7 @@ package cofh.thermal.dynamics.common.grid;
 
 import cofh.thermal.dynamics.api.grid.*;
 import cofh.thermal.dynamics.api.helper.GridHelper;
+import cofh.thermal.dynamics.common.block.entity.duct.DuctBlockEntity;
 import com.google.common.graph.*;
 import it.unimi.dsi.fastutil.longs.*;
 import it.unimi.dsi.fastutil.objects.Object2ObjectRBTreeMap;
@@ -82,6 +83,10 @@ public abstract class Grid<G extends Grid<G, N>, N extends GridNode<G>> implemen
         this.world = world;
     }
 
+    /**
+     * Default per-chunk distribution tick. Every concrete grid type currently overrides this with
+     * its own scheduling; kept as the baseline behavior for grid types without one.
+     */
     public void tick() {
 
         for (LongIterator iterator = loadedChunks.iterator(); iterator.hasNext(); ) {
@@ -674,7 +679,19 @@ public abstract class Grid<G extends Grid<G, N>, N extends GridNode<G>> implemen
         }
     }
 
-    public abstract void refreshCapabilities();
+    /** Invalidates attachments and block capabilities on every loaded node position of this grid. */
+    public void refreshCapabilities() {
+
+        for (Map.Entry<BlockPos, N> node : nodes.entrySet()) {
+            if (!node.getValue().isLoaded()) {
+                continue;
+            }
+            if (world.getBlockEntity(node.getKey()) instanceof DuctBlockEntity<?, ?> duct) {
+                duct.invalidateAttachments();
+            }
+            world.invalidateCapabilities(node.getKey());
+        }
+    }
 
     private boolean isOnEdge(BlockPos pos, EndpointPair<N> edge) {
 

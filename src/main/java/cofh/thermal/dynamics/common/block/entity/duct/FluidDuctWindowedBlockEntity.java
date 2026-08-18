@@ -29,6 +29,10 @@ public class FluidDuctWindowedBlockEntity extends FluidDuctBlockEntity implement
 
     FluidStack renderFluid = FluidStack.EMPTY;
     private int renderAlpha = 0xFF;
+    private FluidStack lastModelFluid = FluidStack.EMPTY;
+    private int lastModelAlpha = Integer.MIN_VALUE;
+    private int lastModelColor;
+    private boolean lastModelLuminous;
 
     public FluidDuctWindowedBlockEntity(BlockPos pos, BlockState state) {
 
@@ -59,15 +63,25 @@ public class FluidDuctWindowedBlockEntity extends FluidDuctBlockEntity implement
     @Override
     public ModelData getModelData() {
 
-        modelData.setFill(renderFluid.isEmpty() ? BLANK_TEXTURE : RenderHelper.getFluidTexture(renderFluid).contents().name());
         int color = FluidHelper.color(renderFluid);
         boolean lighterThanAirGas = FluidGrid.isLighterThanAirGas(renderFluid);
         if (lighterThanAirGas) {
             color = renderAlpha << 24 | color & 0xFFFFFF;
         }
         int alpha = (color >>> 24) * 99 / 100;
-        modelData.setFillColor(alpha << 24 | color & 0xFFFFFF);
-        modelData.setFillLuminous(FluidHelper.luminosity(renderFluid) > 0);
+        int fillColor = alpha << 24 | color & 0xFFFFFF;
+        boolean luminous = FluidHelper.luminosity(renderFluid) > 0;
+        if (!FluidHelper.fluidsEqual(lastModelFluid, renderFluid) || lastModelAlpha != renderAlpha
+                || lastModelColor != fillColor || lastModelLuminous != luminous) {
+            lastModelFluid = renderFluid.isEmpty() ? FluidStack.EMPTY : renderFluid.copy();
+            lastModelAlpha = renderAlpha;
+            lastModelColor = fillColor;
+            lastModelLuminous = luminous;
+            modelData.setFill(renderFluid.isEmpty() ? BLANK_TEXTURE : RenderHelper.getFluidTexture(renderFluid).contents().name());
+            modelData.setFillColor(fillColor);
+            modelData.setFillLuminous(luminous);
+            modelData.setNeedsRefresh();
+        }
         return super.getModelData();
     }
 

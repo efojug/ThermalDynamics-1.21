@@ -2,6 +2,7 @@ package cofh.thermal.dynamics.common.grid;
 
 import cofh.thermal.dynamics.api.grid.IDuct;
 import cofh.thermal.dynamics.api.helper.GridHelper;
+import cofh.thermal.dynamics.common.attachment.IAttachment;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
@@ -11,6 +12,8 @@ import net.neoforged.neoforge.common.util.INBTSerializable;
 
 import javax.annotation.Nullable;
 import java.util.EnumSet;
+
+import static cofh.lib.util.Constants.DIRECTIONS;
 
 /**
  * Represents a Node on a {@link Grid} at a given position.
@@ -96,6 +99,36 @@ public abstract class GridNode<G extends Grid<G, ?>> implements INBTSerializable
     protected IDuct<?, ?> gridHost() {
 
         return GridHelper.getGridHost(getWorld(), getPos());
+    }
+
+    /** Default attachment tick shared by node types: tick every attachment that requests it. */
+    public void attachmentTick() {
+
+        IDuct<?, ?> duct = gridHost();
+        if (duct == null) {
+            return;
+        }
+        for (Direction dir : DIRECTIONS) {
+            IAttachment attachment = duct.getAttachment(dir);
+            if (attachment.needsTick()) {
+                attachment.tick();
+            }
+        }
+    }
+
+    /** Whether any attachment on this node's host currently requests ticking. */
+    public boolean needsAttachmentTick() {
+
+        IDuct<?, ?> duct = gridHost();
+        if (duct == null) {
+            return false;
+        }
+        for (Direction dir : DIRECTIONS) {
+            if (duct.getAttachment(dir).needsTick()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     //@formatter:off
