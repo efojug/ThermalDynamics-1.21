@@ -3,8 +3,12 @@ package cofh.thermal.dynamics.common.attachment;
 import cofh.core.util.filter.BaseFluidFilter;
 import cofh.core.util.filter.IFilter;
 import cofh.lib.api.IConveyableData;
+import cofh.thermal.dynamics.ThermalDynamics;
 import cofh.thermal.dynamics.api.grid.IDuct;
 import cofh.thermal.dynamics.common.inventory.attachment.FluidServoAttachmentMenu;
+import cofh.thermal.dynamics.common.grid.fluid.FluidGrid;
+import cofh.thermal.dynamics.common.grid.OverflowBuffer;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
@@ -13,6 +17,8 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.capabilities.BlockCapability;
@@ -49,10 +55,8 @@ public class FluidServoAttachment implements IFilterableAttachment, IRedstoneCon
 
     protected BaseFluidFilter filter = new BaseFluidFilter(15);
     protected RedstoneControlLogic rsControl = new RedstoneControlLogic(this);
-
-    protected IFluidHandler internalGridCap = null;
-    protected IFluidHandler gridCap = null;
-    protected IFluidHandler extCap = null;
+    protected net.neoforged.neoforge.capabilities.BlockCapabilityCache<IFluidHandler, Direction> externalFluidCache;
+    private long externalCacheGeneration;
 
     public FluidServoAttachment(IDuct<?, ?> duct, Direction side) {
 
@@ -80,9 +84,24 @@ public class FluidServoAttachment implements IFilterableAttachment, IRedstoneCon
     @Override
     public void invalidate() {
 
-        internalGridCap = null;
-        gridCap = null;
-        extCap = null;
+        externalFluidCache = null;
+        ++externalCacheGeneration;
+    }
+
+    /** Cached external fluid handler lookup; avoids a block entity + capability query every tick. Nullable. */
+    protected IFluidHandler externalHandler() {
+
+        if (!(world() instanceof ServerLevel serverLevel)) {
+            return null;
+        }
+        if (externalFluidCache == null) {
+            long generation = ++externalCacheGeneration;
+            externalFluidCache = net.neoforged.neoforge.capabilities.BlockCapabilityCache.create(Capabilities.FluidHandler.BLOCK, serverLevel,
+                    pos().relative(side), side.getOpposite(),
+                    () -> generation == externalCacheGeneration && world() instanceof ServerLevel,
+                    () -> { });
+        }
+        return externalFluidCache.getCapability();
     }
 
     @Override
@@ -117,15 +136,80 @@ public class FluidServoAttachment implements IFilterableAttachment, IRedstoneCon
         if (!rsControl.getState()) {
             return;
         }
-        if (internalGridCap == null) {
-            internalGridCap = duct.getGrid().getCapability(Capabilities.FluidHandler.BLOCK);
+        if (!(duct.getGrid() instanceof FluidGrid grid)) {
+            return;
         }
-        if (extCap != null && internalGridCap != null) {
-            amountTransfer += TRANSFER;
-            amountTransfer = Math.min(amountTransfer, MAX_TRANSFER);
-            int toFill = internalGridCap.fill(extCap.drain(amountTransfer, SIMULATE), SIMULATE);
-            internalGridCap.fill(extCap.drain(toFill, EXECUTE), EXECUTE);
-            amountTransfer -= toFill;
+        amountTransfer = Math.min(amountTransfer + TRANSFER, MAX_TRANSFER);
+        int moved = transferFromExternal(duct, side, filter, grid, amountTransfer, externalHandler());
+        amountTransfer = Math.max(0, amountTransfer - moved);
+    }
+
+    protected static int transferFromExternal(IDuct<?, ?> duct, Direction side, IFilter filter,
+            IFluidHandler gridCap, int maxAmount, IFluidHandler external) {
+
+        if (!(gridCap instanceof FluidGrid grid) || maxAmount <= 0 || !(duct.getHostWorld() instanceof ServerLevel)) {
+            return 0;
+        }
+        if (!grid.getOverflowBuffer().isEmpty()) {
+            drainOverflowIntoGrid(grid, Integer.MAX_VALUE);
+            if (!grid.getOverflowBuffer().isEmpty()) {
+                return 0;
+            }
+        }
+        if (external == null) {
+            return 0;
+        }
+        int limit = (int) Math.min(maxAmount, Math.min(grid.overflowHeadroom(), Integer.MAX_VALUE));
+        if (limit <= 0) {
+            return 0;
+        }
+        FluidStack simulated = external.drain(limit, SIMULATE);
+        if (simulated.isEmpty() || !filter.valid(simulated) || !grid.getOverflowBuffer().compatibleWith(simulated)) {
+            return 0;
+        }
+        int accepted = Math.min(simulated.getAmount(), Math.max(0, grid.fill(simulated, SIMULATE)));
+        if (accepted <= 0) {
+            return 0;
+        }
+        FluidStack request = simulated.copyWithAmount(accepted);
+        FluidStack extracted = external.drain(request, EXECUTE);
+        if (extracted.isEmpty()) {
+            return 0;
+        }
+        if (!FluidStack.isSameFluidSameComponents(extracted, request)
+                || extracted.getAmount() > request.getAmount() || !filter.valid(extracted)) {
+            restoreToSource(external, extracted);
+            return 0;
+        }
+        int inserted = Math.max(0, grid.fill(extracted, EXECUTE));
+        int leftover = extracted.getAmount() - inserted;
+        if (leftover > 0) {
+            long parked = grid.getOverflowBuffer().add(extracted, leftover);
+            grid.noteOverflowParked();
+            if (parked < leftover) {
+                ThermalDynamics.LOG.warn("Fluid overflow buffer rejected {} mB", leftover - parked);
+            }
+        }
+        return extracted.getAmount();
+    }
+
+    private static int drainOverflowIntoGrid(FluidGrid grid, int maxAmount) {
+
+        OverflowBuffer<FluidStack> buffer = grid.getOverflowBuffer();
+        FluidStack offered = buffer.peek(maxAmount);
+        if (offered.isEmpty()) {
+            return 0;
+        }
+        int accepted = Math.max(0, grid.replayOverflow(offered));
+        buffer.drain(accepted);
+        return accepted;
+    }
+
+    private static void restoreToSource(IFluidHandler external, FluidStack stack) {
+
+        int restored = Math.max(0, external.fill(stack, EXECUTE));
+        if (restored < stack.getAmount()) {
+            ThermalDynamics.LOG.warn("Fluid servo could not return {} mB to a non-compliant source", stack.getAmount() - restored);
         }
     }
 
@@ -165,12 +249,8 @@ public class FluidServoAttachment implements IFilterableAttachment, IRedstoneCon
     public <T, C> T wrapGridCapability(BlockCapability<T, C> capability, T gridCapIn) {
 
         if (capability == Capabilities.FluidHandler.BLOCK) {
-            if (gridCap != null) {
-                return (T) gridCap;
-            }
             if (gridCapIn instanceof IFluidHandler handler) {
-                gridCap = new WrappedGridFluidHandler(handler);
-                return (T) gridCap;
+                return (T) new WrappedGridFluidHandler(handler);
             }
         }
         return gridCapIn;
@@ -181,12 +261,8 @@ public class FluidServoAttachment implements IFilterableAttachment, IRedstoneCon
     public <T, C> T wrapExternalCapability(BlockCapability<T, C> capability, T extCapIn) {
 
         if (capability == Capabilities.FluidHandler.BLOCK) {
-            if (extCap != null) {
-                return (T) extCap;
-            }
             if (extCapIn instanceof IFluidHandler handler) {
-                extCap = new WrappedExternalFluidHandler(handler, e -> rsControl.getState() && filter.valid(e));
-                return (T) extCap;
+                return (T) new WrappedExternalFluidHandler(handler, e -> rsControl.getState() && filter.valid(e));
             }
         }
         return extCapIn;
@@ -211,10 +287,18 @@ public class FluidServoAttachment implements IFilterableAttachment, IRedstoneCon
     }
 
     @Override
+    public int configPacketSize() {
+
+        return 2;
+    }
+
+    @Override
     public void handleConfigPacket(FriendlyByteBuf buffer) {
 
-        filter.setAllowList(buffer.readBoolean());
-        filter.setCheckNBT(buffer.readBoolean());
+        boolean allowList = buffer.readBoolean();
+        boolean checkNbt = buffer.readBoolean();
+        filter.setAllowList(allowList);
+        filter.setCheckNBT(checkNbt);
     }
 
     @Override

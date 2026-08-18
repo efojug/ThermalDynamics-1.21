@@ -23,6 +23,12 @@ public interface IPacketHandlerAttachment extends IAttachment {
         return buffer;
     }
 
+    /** Exact payload size in bytes; negative means this attachment does not accept config packets. */
+    default int configPacketSize() {
+
+        return -1;
+    }
+
     default void handleConfigPacket(FriendlyByteBuf buffer) {
 
     }

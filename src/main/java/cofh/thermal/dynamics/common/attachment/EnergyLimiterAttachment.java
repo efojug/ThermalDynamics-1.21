@@ -202,16 +202,20 @@ public class EnergyLimiterAttachment implements IAttachment, IRedstoneControllab
     }
 
     @Override
+    public int configPacketSize() {
+
+        return 9;
+    }
+
+    @Override
     public void handleConfigPacket(FriendlyByteBuf buffer) {
 
-        boolean previousLimitEnabled = limitEnabled;
-        limitEnabled = buffer.readBoolean();
-        amountInput = MathHelper.clamp(buffer.readInt(), 0, getMaxTransfer());
-        amountOutput = MathHelper.clamp(buffer.readInt(), 0, getMaxTransfer());
-
-        if (limitEnabled != previousLimitEnabled) {
-            onControlUpdate();
-        }
+        boolean newEnabled = buffer.readBoolean();
+        int newInput = MathHelper.clamp(buffer.readInt(), 0, getMaxTransfer());
+        int newOutput = MathHelper.clamp(buffer.readInt(), 0, getMaxTransfer());
+        limitEnabled = newEnabled;
+        amountInput = newInput;
+        amountOutput = newOutput;
     }
 
     @Override

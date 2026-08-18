@@ -5,6 +5,7 @@ import cofh.core.util.filter.IFilter;
 import cofh.lib.api.IConveyableData;
 import cofh.thermal.dynamics.api.grid.IDuct;
 import cofh.thermal.dynamics.common.inventory.attachment.FluidTurboServoAttachmentMenu;
+import cofh.thermal.dynamics.common.grid.fluid.FluidGrid;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
@@ -42,10 +43,8 @@ public class FluidTurboServoAttachment implements IFilterableAttachment, IRedsto
 
     protected BaseFluidFilter filter = new BaseFluidFilter(1);
     protected RedstoneControlLogic rsControl = new RedstoneControlLogic(this);
-
-    protected IFluidHandler internalGridCap = null;
-    protected IFluidHandler gridCap = null;
-    protected IFluidHandler extCap = null;
+    protected net.neoforged.neoforge.capabilities.BlockCapabilityCache<net.neoforged.neoforge.fluids.capability.IFluidHandler, Direction> externalFluidCache;
+    private long externalCacheGeneration;
 
     public FluidTurboServoAttachment(IDuct<?, ?> duct, Direction side) {
 
@@ -68,9 +67,25 @@ public class FluidTurboServoAttachment implements IFilterableAttachment, IRedsto
     @Override
     public void invalidate() {
 
-        internalGridCap = null;
-        gridCap = null;
-        extCap = null;
+        externalFluidCache = null;
+        ++externalCacheGeneration;
+    }
+
+    /** Cached external fluid handler lookup; avoids a block entity + capability query every tick. Nullable. */
+    protected net.neoforged.neoforge.fluids.capability.IFluidHandler externalHandler() {
+
+        if (!(duct.getHostWorld() instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
+            return null;
+        }
+        if (externalFluidCache == null) {
+            long generation = ++externalCacheGeneration;
+            externalFluidCache = net.neoforged.neoforge.capabilities.BlockCapabilityCache.create(
+                    net.neoforged.neoforge.capabilities.Capabilities.FluidHandler.BLOCK, serverLevel,
+                    pos().relative(side), side.getOpposite(),
+                    () -> generation == externalCacheGeneration && duct.getHostWorld() instanceof net.minecraft.server.level.ServerLevel,
+                    () -> { });
+        }
+        return externalFluidCache.getCapability();
     }
 
     @Override
@@ -102,11 +117,8 @@ public class FluidTurboServoAttachment implements IFilterableAttachment, IRedsto
         if (!rsControl.getState()) {
             return;
         }
-        if (internalGridCap == null) {
-            internalGridCap = duct.getGrid().getCapability(Capabilities.FluidHandler.BLOCK);
-        }
-        if (extCap != null && internalGridCap != null) {
-            internalGridCap.fill(extCap.drain(internalGridCap.fill(extCap.drain(Integer.MAX_VALUE, SIMULATE), SIMULATE), EXECUTE), EXECUTE);
+        if (duct.getGrid() instanceof FluidGrid grid) {
+            FluidServoAttachment.transferFromExternal(duct, side, filter, grid, Integer.MAX_VALUE, externalHandler());
         }
     }
 
@@ -146,12 +158,8 @@ public class FluidTurboServoAttachment implements IFilterableAttachment, IRedsto
     public <T, C> T wrapGridCapability(BlockCapability<T, C> capability, T gridCapIn) {
 
         if (capability == Capabilities.FluidHandler.BLOCK) {
-            if (gridCap != null) {
-                return (T) gridCap;
-            }
             if (gridCapIn instanceof IFluidHandler handler) {
-                gridCap = new WrappedGridFluidHandler(handler);
-                return (T) gridCap;
+                return (T) new WrappedGridFluidHandler(handler);
             }
         }
         return gridCapIn;
@@ -162,12 +170,8 @@ public class FluidTurboServoAttachment implements IFilterableAttachment, IRedsto
     public <T, C> T wrapExternalCapability(BlockCapability<T, C> capability, T extCapIn) {
 
         if (capability == Capabilities.FluidHandler.BLOCK) {
-            if (extCap != null) {
-                return (T) extCap;
-            }
             if (extCapIn instanceof IFluidHandler handler) {
-                extCap = new WrappedExternalFluidHandler(handler, e -> rsControl.getState() && filter.valid(e));
-                return (T) extCap;
+                return (T) new WrappedExternalFluidHandler(handler, e -> rsControl.getState() && filter.valid(e));
             }
         }
         return extCapIn;
@@ -192,10 +196,18 @@ public class FluidTurboServoAttachment implements IFilterableAttachment, IRedsto
     }
 
     @Override
+    public int configPacketSize() {
+
+        return 2;
+    }
+
+    @Override
     public void handleConfigPacket(FriendlyByteBuf buffer) {
 
-        filter.setAllowList(buffer.readBoolean());
-        filter.setCheckNBT(buffer.readBoolean());
+        boolean allowList = buffer.readBoolean();
+        boolean checkNbt = buffer.readBoolean();
+        filter.setAllowList(allowList);
+        filter.setCheckNBT(checkNbt);
     }
 
     @Override

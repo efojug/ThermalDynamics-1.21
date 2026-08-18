@@ -3,6 +3,7 @@ package cofh.thermal.dynamics.compat.mekanism.network.packet.server;
 import cofh.thermal.dynamics.api.grid.IDuct;
 import cofh.thermal.dynamics.compat.mekanism.attachment.ChemicalServoAttachment;
 import cofh.thermal.dynamics.compat.mekanism.inventory.ChemicalServoAttachmentMenu;
+import cofh.thermal.dynamics.common.inventory.attachment.AttachmentMenu;
 import cofh.thermal.dynamics.compat.mekanism.network.data.server.ChemicalFilterPayload;
 import mekanism.api.chemical.ChemicalStack;
 import net.minecraft.nbt.CompoundTag;
@@ -37,13 +38,20 @@ public final class ChemicalFilterPacket {
                 return;
             }
             BlockEntity tile = world.getBlockEntity(payload.pos());
-            if (tile instanceof IDuct<?, ?> duct && duct.getAttachment(payload.side()) instanceof ChemicalServoAttachment attachment &&
-                    payload.slot() >= 0 && payload.slot() < attachment.getChemicalFilter().size()) {
+            if (player.distanceToSqr(payload.pos().getX() + 0.5D, payload.pos().getY() + 0.5D, payload.pos().getZ() + 0.5D) > AttachmentMenu.INTERACTION_RANGE_SQR
+                    || !(tile instanceof IDuct<?, ?> duct)
+                    || !(duct.getAttachment(payload.side()) instanceof ChemicalServoAttachment attachment)
+                    || payload.slot() < 0 || payload.slot() >= attachment.getChemicalFilter().size()
+                    || !AttachmentMenu.ownsOpenAttachment(player, payload.pos(), payload.side(), attachment)) {
+                return;
+            }
+            try {
                 ChemicalStack chemical = ChemicalStack.parseOptional(world.registryAccess(), payload.chemical());
                 attachment.setFilterChemical(payload.slot(), chemical);
                 if (player.containerMenu instanceof ChemicalServoAttachmentMenu menu && menu.attachment == attachment) {
                     menu.applyFilterChemical(payload.slot(), chemical);
                 }
+            } catch (RuntimeException ignored) {
             }
         });
     }

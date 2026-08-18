@@ -22,7 +22,6 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.neoforged.neoforge.capabilities.BlockCapability;
-import net.neoforged.neoforge.capabilities.ItemCapability;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import net.neoforged.neoforge.common.extensions.IMenuTypeExtension;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
@@ -51,7 +50,6 @@ import static net.minecraft.world.level.block.state.BlockBehaviour.Properties.of
 public final class MekanismCompat {
 
     public static final BlockCapability<IChemicalHandler, Direction> CHEMICAL_HANDLER = BlockCapability.createSided(fromNamespaceAndPath("mekanism", "chemical_handler"), IChemicalHandler.class);
-    public static final ItemCapability<IChemicalHandler, Void> CHEMICAL_ITEM_HANDLER = ItemCapability.createVoid(fromNamespaceAndPath("mekanism", "chemical_handler"), IChemicalHandler.class);
 
     public static final Supplier<IGridType<ChemicalGrid>> CHEMICAL_GRID = GRIDS.register("chemical_grid", () -> IGridType.of(ChemicalGrid::new));
     public static final Supplier<BlockEntityType<ChemicalDuctBlockEntity>> CHEMICAL_DUCT_BLOCK_ENTITY = BLOCK_ENTITIES.register(ID_CHEMICAL_DUCT,

@@ -66,18 +66,18 @@ public class FluidTurboServoAttachmentMenu extends AttachmentMenu implements IFi
 
     public int getFilterSize() {
 
-        return filter.size();
+        return filter == null ? 0 : filter.size();
     }
 
     public List<FluidStack> getFilterStacks() {
 
-        return filterInventory.getStacks();
+        return filterInventory == null ? List.of() : filterInventory.getStacks();
     }
 
     @Override
     protected int getMergeableSlotCount() {
 
-        return filterInventory.getContainerSize();
+        return filterInventory == null ? 0 : filterInventory.getContainerSize();
     }
 
     @Override
@@ -91,7 +91,9 @@ public class FluidTurboServoAttachmentMenu extends AttachmentMenu implements IFi
     @Override
     public void removed(Player playerIn) {
 
-        filter.setFluids(filterInventory.getStacks());
+        if (filter != null && filterInventory != null) {
+            filter.setFluids(filterInventory.getStacks());
+        }
         super.removed(playerIn);
     }
 
@@ -99,7 +101,7 @@ public class FluidTurboServoAttachmentMenu extends AttachmentMenu implements IFi
     @Override
     public FriendlyByteBuf getGuiPacket(FriendlyByteBuf buffer) {
 
-        byte size = (byte) filter.getFluids().size();
+        byte size = (byte) getFilterSize();
         buffer.writeByte(size);
         for (int i = 0; i < size; ++i) {
             FluidStack.OPTIONAL_STREAM_CODEC.encode((RegistryFriendlyByteBuf) buffer, getFilterStacks().get(i));
@@ -111,10 +113,17 @@ public class FluidTurboServoAttachmentMenu extends AttachmentMenu implements IFi
     @Override
     public void handleGuiPacket(FriendlyByteBuf buffer) {
 
-        byte size = buffer.readByte();
+        if (!buffer.isReadable()) return;
+        int size = Byte.toUnsignedInt(buffer.readByte());
+        if (filterInventory == null || size > getFilterSize()) return;
         List<FluidStack> fluidStacks = new ArrayList<>(size);
-        for (int i = 0; i < size; ++i) {
-            fluidStacks.add(FluidStack.OPTIONAL_STREAM_CODEC.decode((RegistryFriendlyByteBuf) buffer));
+        try {
+            for (int i = 0; i < size; ++i) {
+                if (!buffer.isReadable()) return;
+                fluidStacks.add(FluidStack.OPTIONAL_STREAM_CODEC.decode((RegistryFriendlyByteBuf) buffer));
+            }
+        } catch (RuntimeException ignored) {
+            return;
         }
         filterInventory.readFromSource(fluidStacks);
     }
@@ -124,12 +133,13 @@ public class FluidTurboServoAttachmentMenu extends AttachmentMenu implements IFi
     @Override
     public boolean getAllowList() {
 
-        return filter.getAllowList();
+        return filter != null && filter.getAllowList();
     }
 
     @Override
     public boolean setAllowList(boolean allowList) {
 
+        if (filter == null || attachment == null) return false;
         boolean ret = filter.setAllowList(allowList);
         AttachmentConfigPacket.sendToServer(attachment);
         return ret;
@@ -138,12 +148,13 @@ public class FluidTurboServoAttachmentMenu extends AttachmentMenu implements IFi
     @Override
     public boolean getCheckNBT() {
 
-        return filter.getCheckNBT();
+        return filter != null && filter.getCheckNBT();
     }
 
     @Override
     public boolean setCheckNBT(boolean checkNBT) {
 
+        if (filter == null || attachment == null) return false;
         boolean ret = filter.setCheckNBT(checkNBT);
         AttachmentConfigPacket.sendToServer(attachment);
         return ret;

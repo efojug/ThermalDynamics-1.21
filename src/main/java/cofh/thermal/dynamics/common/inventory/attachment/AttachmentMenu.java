@@ -10,6 +10,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
 public abstract class AttachmentMenu extends ContainerMenuCoFH {
@@ -21,10 +22,17 @@ public abstract class AttachmentMenu extends ContainerMenuCoFH {
 
     public final BlockEntity hostTile;
     public final IAttachment baseAttachment;
+    protected final BlockPos attachmentPos;
+    protected final Direction attachmentSide;
+    protected final Level attachmentLevel;
+    public static final double INTERACTION_RANGE_SQR = 64.0 * 64.0;
 
     public AttachmentMenu(@Nullable MenuType<?> type, int id, Level world, BlockPos pos, Direction side, Inventory inventory, Player player) {
 
         super(type, id, inventory, player);
+        attachmentPos = pos.immutable();
+        attachmentSide = side;
+        attachmentLevel = world;
         hostTile = world.getBlockEntity(pos);
 
         if (hostTile instanceof IDuct<?, ?> duct) {
@@ -37,7 +45,23 @@ public abstract class AttachmentMenu extends ContainerMenuCoFH {
     @Override
     public boolean stillValid(Player player) {
 
-        return baseAttachment != null && hostTile != null && !hostTile.isRemoved();
+        if (player == null || player.level() != attachmentLevel
+                || player.distanceToSqr(Vec3.atCenterOf(attachmentPos)) > INTERACTION_RANGE_SQR
+                || hostTile == null || hostTile.isRemoved() || baseAttachment == null) {
+            return false;
+        }
+        return hostTile instanceof IDuct<?, ?> duct && duct.getAttachment(attachmentSide) == baseAttachment;
+    }
+
+    public static boolean ownsOpenAttachment(Player player, BlockPos pos, Direction side, IAttachment attachment) {
+        return player != null && player.containerMenu instanceof AttachmentMenu menu
+                && menu.owns(player, pos, side, attachment)
+                && player.distanceToSqr(Vec3.atCenterOf(pos)) <= INTERACTION_RANGE_SQR;
+    }
+
+    public boolean owns(Player player, BlockPos pos, Direction side, IAttachment attachment) {
+        return player != null && player.level() == attachmentLevel && attachmentPos.equals(pos)
+                && attachmentSide == side && baseAttachment == attachment;
     }
 
     protected static int getCenteredContentX(int contentWidth) {

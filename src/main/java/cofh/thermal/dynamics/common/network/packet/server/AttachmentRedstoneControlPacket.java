@@ -4,6 +4,7 @@ import cofh.lib.api.control.IRedstoneControllable;
 import cofh.thermal.dynamics.api.grid.IDuct;
 import cofh.thermal.dynamics.common.attachment.IRedstoneControllableAttachment;
 import cofh.thermal.dynamics.common.network.data.server.AttachmentRedstoneControlPayload;
+import cofh.thermal.dynamics.common.inventory.attachment.AttachmentMenu;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -34,10 +35,16 @@ public class AttachmentRedstoneControlPacket {
                 return;
             }
             BlockEntity tile = world.getBlockEntity(payload.pos());
-            if (tile instanceof IDuct<?, ?> duct && duct.getAttachment(payload.side()) instanceof IRedstoneControllableAttachment attachment) {
+            if (player.distanceToSqr(payload.pos().getX() + 0.5D, payload.pos().getY() + 0.5D, payload.pos().getZ() + 0.5D) > AttachmentMenu.INTERACTION_RANGE_SQR
+                    || !(tile instanceof IDuct<?, ?> duct)
+                    || !(duct.getAttachment(payload.side()) instanceof IRedstoneControllableAttachment attachment)
+                    || !AttachmentMenu.ownsOpenAttachment(player, payload.pos(), payload.side(), attachment)) {
+                return;
+            }
+            {
                 int mode = Byte.toUnsignedInt(payload.mode());
-                if (mode < IRedstoneControllable.ControlMode.VALUES.length) {
-                    attachment.setControl(payload.threshold(), IRedstoneControllable.ControlMode.VALUES[mode]);
+                if (mode >= 0 && mode < IRedstoneControllable.ControlMode.VALUES.length) {
+                    attachment.setControl(Math.clamp(payload.threshold(), 0, 15), IRedstoneControllable.ControlMode.VALUES[mode]);
                 }
             }
         });

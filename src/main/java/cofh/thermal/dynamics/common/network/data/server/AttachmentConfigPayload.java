@@ -19,7 +19,15 @@ public record AttachmentConfigPayload(BlockPos pos, Direction side, FriendlyByte
 
     public AttachmentConfigPayload(final FriendlyByteBuf buf) {
 
-        this(buf.readBlockPos(), buf.readEnum(Direction.class), NetworkHelper.copyRemaining(buf));
+        this(buf.readBlockPos(), buf.readEnum(Direction.class), copyConfig(buf));
+    }
+
+    private static FriendlyByteBuf copyConfig(FriendlyByteBuf buf) {
+
+        if (buf.readableBytes() > 4096) {
+            throw new io.netty.handler.codec.DecoderException("Attachment config exceeds 4096 bytes");
+        }
+        return NetworkHelper.copyRemaining(buf);
     }
 
     public void write(FriendlyByteBuf buf) {

@@ -453,12 +453,13 @@ public class GridContainer extends SavedData implements IGridContainer {
 
     // region EVENT CALLBACKS
     public void onWorldTick() {
-        try {
-            for (Grid<?, ?> value : loadedGrids.values()) {
+        for (Grid<?, ?> value : loadedGrids.values()) {
+            try {
                 value.tick();
+            } catch (Exception e) {
+                // Isolate the failure: one broken grid must not starve every grid after it this tick.
+                LOG.error("Thermal Dynamics grid {} errored during ticking:", value.getId(), e);
             }
-        } catch (Exception e) {
-            LOG.error("Thermal Dynamics encountered an error during grid ticking:", e);
         }
         if (DEBUG && tickCounter % 10 == 0 && !loadedGrids.isEmpty()) {
             FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());

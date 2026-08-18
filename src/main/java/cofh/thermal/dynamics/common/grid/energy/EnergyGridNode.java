@@ -42,17 +42,8 @@ public class EnergyGridNode extends GridNode<EnergyGrid> implements ITickableGri
         cached = true;
     }
 
-    @Override
-    public void attachmentTick() {
-
-        IDuct<?, ?> duct = gridHost();
-        if (duct == null) {
-            return;
-        }
-        for (Direction dir : DIRECTIONS) {
-            duct.getAttachment(dir).tick();
-        }
-    }
+    // attachmentTick: inherited from GridNode. No energy attachment requests ticks and EnergyGrid's
+    // tick loop never dispatches attachment ticks, so no energy-specific override is needed.
 
     @Override
     public void distributionTick() {

@@ -10,6 +10,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
+import cofh.thermal.dynamics.common.inventory.attachment.AttachmentMenu;
 
 
 public class AttachmentConfigPacket {
@@ -35,9 +36,26 @@ public class AttachmentConfigPacket {
                 return;
             }
             BlockEntity tile = world.getBlockEntity(payload.pos());
-            if (tile instanceof IDuct<?, ?> duct && duct.getAttachment(payload.side()) instanceof IPacketHandlerAttachment attachment) {
-                attachment.handleConfigPacket(payload.buf());
+            if (player.distanceToSqr(payload.pos().getX() + 0.5D, payload.pos().getY() + 0.5D, payload.pos().getZ() + 0.5D) > AttachmentMenu.INTERACTION_RANGE_SQR
+                    || !(tile instanceof IDuct<?, ?> duct)
+                    || !(duct.getAttachment(payload.side()) instanceof IPacketHandlerAttachment attachment)
+                    || !AttachmentMenu.ownsOpenAttachment(player, payload.pos(), payload.side(), attachment)) {
+                return;
             }
+            int expected = attachment.configPacketSize();
+            FriendlyByteBuf config = payload.buf();
+            if (expected < 0 || config == null || config.readableBytes() != expected) {
+                return;
+            }
+            try {
+                attachment.handleConfigPacket(config);
+            } catch (RuntimeException ignored) {
+                return;
+            }
+            if (config.isReadable()) {
+                return;
+            }
+            attachment.onControlUpdate();
         });
     }
 

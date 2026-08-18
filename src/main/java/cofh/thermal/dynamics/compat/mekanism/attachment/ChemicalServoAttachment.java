@@ -1,11 +1,13 @@
 package cofh.thermal.dynamics.compat.mekanism.attachment;
 
 import cofh.lib.api.IConveyableData;
+import cofh.thermal.dynamics.ThermalDynamics;
 import cofh.thermal.dynamics.api.grid.IDuct;
 import cofh.thermal.dynamics.common.attachment.IAttachment;
 import cofh.thermal.dynamics.common.attachment.IRedstoneControllableAttachment;
 import cofh.thermal.dynamics.common.attachment.RedstoneControlLogic;
 import cofh.thermal.dynamics.compat.mekanism.grid.ChemicalGrid;
+import cofh.thermal.dynamics.common.grid.OverflowBuffer;
 import cofh.thermal.dynamics.compat.mekanism.inventory.ChemicalServoAttachmentMenu;
 import mekanism.api.Action;
 import mekanism.api.chemical.ChemicalStack;
@@ -24,7 +26,9 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.server.level.ServerLevel;
 import net.neoforged.neoforge.capabilities.BlockCapability;
+import net.neoforged.neoforge.capabilities.BlockCapabilityCache;
 import org.jetbrains.annotations.Nullable;
 
 import static cofh.lib.util.constants.NBTTags.TAG_AMOUNT;
@@ -48,7 +52,8 @@ public class ChemicalServoAttachment implements IRedstoneControllableAttachment,
     protected final RedstoneControlLogic rsControl = new RedstoneControlLogic(this);
     protected long amountTransfer = TRANSFER;
     protected IChemicalHandler gridCap;
-    protected IChemicalHandler externalCap;
+    protected BlockCapabilityCache<IChemicalHandler, Direction> externalChemicalCache;
+    private long externalCacheGeneration;
 
     public ChemicalServoAttachment(IDuct<?, ?> duct, Direction side) {
 
@@ -69,16 +74,12 @@ public class ChemicalServoAttachment implements IRedstoneControllableAttachment,
         return side;
     }
 
-    public long getTransfer() {
-
-        return TRANSFER;
-    }
-
     @Override
     public void invalidate() {
 
         gridCap = null;
-        externalCap = null;
+        ++externalCacheGeneration;
+        externalChemicalCache = null;
     }
 
     @Override
@@ -128,42 +129,84 @@ public class ChemicalServoAttachment implements IRedstoneControllableAttachment,
         if (gridCap == null && duct.getGrid() instanceof ChemicalGrid grid) {
             gridCap = grid;
         }
-        if (externalCap == null && world() != null) {
-            BlockPos target = pos().relative(side);
-            BlockEntity targetTile = world().getBlockEntity(target);
-            if (targetTile != null) {
-                externalCap = world().getCapability(CHEMICAL_HANDLER, target, targetTile.getBlockState(), targetTile, side.getOpposite());
-            }
-        }
-        if (gridCap == null || externalCap == null) {
+        if (!(gridCap instanceof ChemicalGrid grid)) {
             return;
         }
+        IChemicalHandler external = externalHandler();
+        if (external == null) return;
         amountTransfer = Math.min(amountTransfer, MAX_TRANSFER - TRANSFER) + TRANSFER;
-        ChemicalStack extracted = extractFiltered(externalCap, amountTransfer, Action.SIMULATE);
-        if (extracted.isEmpty()) {
-            return;
+        long moved = 0;
+        for (int tank = 0; tank < external.getChemicalTanks(); ++tank) {
+            moved = transferTank(external, tank, amountTransfer);
+            if (moved > 0) break;
         }
-        long accepted = extracted.getAmount() - gridCap.insertChemical(extracted, Action.SIMULATE).getAmount();
-        if (accepted <= 0) {
-            return;
-        }
-        ChemicalStack actual = extractFiltered(externalCap, accepted, Action.EXECUTE);
-        if (actual.isEmpty()) {
-            return;
-        }
-        long inserted = actual.getAmount() - gridCap.insertChemical(actual, Action.EXECUTE).getAmount();
-        amountTransfer = Math.max(0, amountTransfer - inserted);
+        amountTransfer = Math.max(0, amountTransfer - moved);
     }
 
-    protected ChemicalStack extractFiltered(IChemicalHandler handler, long amount, Action action) {
+    @Nullable
+    protected IChemicalHandler externalHandler() {
 
-        for (int tank = 0; tank < handler.getChemicalTanks(); ++tank) {
-            ChemicalStack contained = handler.getChemicalInTank(tank);
-            if (!contained.isEmpty() && ChemicalFilterHelper.valid(filter, contained)) {
-                return handler.extractChemical(tank, amount, action);
+        if (!(world() instanceof ServerLevel serverLevel)) return null;
+        if (externalChemicalCache == null) {
+            long generation = ++externalCacheGeneration;
+            externalChemicalCache = BlockCapabilityCache.create(CHEMICAL_HANDLER, serverLevel,
+                    pos().relative(side), side.getOpposite(),
+                    () -> generation == externalCacheGeneration && world() instanceof ServerLevel,
+                    () -> { });
+        }
+        return externalChemicalCache.getCapability();
+    }
+
+    protected long transferTank(IChemicalHandler external, int tank, long limit) {
+
+        if (!(duct.getGrid() instanceof ChemicalGrid grid) || limit <= 0) return 0;
+        if (!grid.getOverflowBuffer().isEmpty()) {
+            drainOverflowIntoGrid(grid, Long.MAX_VALUE);
+            if (!grid.getOverflowBuffer().isEmpty()) return 0;
+        }
+        long budget = Math.min(limit, grid.overflowHeadroom());
+        if (budget <= 0) return 0;
+        ChemicalStack simulated = external.extractChemical(tank, budget, Action.SIMULATE);
+        if (simulated.isEmpty() || !ChemicalFilterHelper.valid(filter, simulated)
+                || !grid.getOverflowBuffer().compatibleWith(simulated)) return 0;
+        long accepted = simulated.getAmount() - grid.insertChemical(simulated, Action.SIMULATE).getAmount();
+        if (accepted <= 0) return 0;
+        ChemicalStack request = simulated.copyWithAmount(accepted);
+        ChemicalStack actual = external.extractChemical(tank, accepted, Action.EXECUTE);
+        if (actual.isEmpty()) return 0;
+        if (!ChemicalStack.isSameChemical(actual, request) || actual.getAmount() > accepted
+                || !ChemicalFilterHelper.valid(filter, actual)) {
+            restoreToSource(external, tank, actual);
+            return 0;
+        }
+        ChemicalStack remainder = grid.insertChemical(actual, Action.EXECUTE);
+        if (!remainder.isEmpty()) {
+            long parked = grid.getOverflowBuffer().add(remainder);
+            grid.noteOverflowParked();
+            if (parked < remainder.getAmount()) {
+                ThermalDynamics.LOG.warn("Chemical overflow buffer rejected {}", remainder.getAmount() - parked);
             }
         }
-        return ChemicalStack.EMPTY;
+        return actual.getAmount();
+    }
+
+    private static long drainOverflowIntoGrid(ChemicalGrid grid, long maxAmount) {
+
+        OverflowBuffer<ChemicalStack> buffer = grid.getOverflowBuffer();
+        ChemicalStack offered = buffer.peek(maxAmount);
+        if (offered.isEmpty()) return 0;
+        ChemicalStack remainder = grid.replayOverflow(offered);
+        long accepted = offered.getAmount() - remainder.getAmount();
+        buffer.drain(accepted);
+        return accepted;
+    }
+
+    private static void restoreToSource(IChemicalHandler external, int tank, ChemicalStack stack) {
+
+        ChemicalStack remainder = external.insertChemical(tank, stack, Action.EXECUTE);
+        if (!remainder.isEmpty()) {
+            ThermalDynamics.LOG.warn("Chemical servo could not return {} to a non-compliant source", remainder.getAmount());
+        }
     }
 
     @Override
@@ -237,10 +280,18 @@ public class ChemicalServoAttachment implements IRedstoneControllableAttachment,
     }
 
     @Override
+    public int configPacketSize() {
+
+        return 2;
+    }
+
+    @Override
     public void handleConfigPacket(FriendlyByteBuf buffer) {
 
-        filter.setAllowList(buffer.readBoolean());
-        filter.setCheckNBT(buffer.readBoolean());
+        boolean allowList = buffer.readBoolean();
+        boolean checkNbt = buffer.readBoolean();
+        filter.setAllowList(allowList);
+        filter.setCheckNBT(checkNbt);
     }
 
     @Override
@@ -292,6 +343,9 @@ public class ChemicalServoAttachment implements IRedstoneControllableAttachment,
     protected void readFilterFromBuffer(FriendlyByteBuf buffer) {
 
         int size = Byte.toUnsignedInt(buffer.readByte());
+        if (size != filter.size()) {
+            throw new IllegalArgumentException("Invalid chemical filter size: " + size);
+        }
         java.util.List<ChemicalStack> chemicals = new java.util.ArrayList<>(size);
         for (int i = 0; i < size; ++i) {
             chemicals.add(ChemicalStack.OPTIONAL_STREAM_CODEC.decode((RegistryFriendlyByteBuf) buffer));

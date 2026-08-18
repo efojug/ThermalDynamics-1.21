@@ -91,20 +91,6 @@ public class EnergyGrid extends Grid<EnergyGrid, EnergyGridNode> implements IRed
         return null;
     }
 
-    @Override
-    public void refreshCapabilities() {
-
-        for (var node : getNodes().entrySet()) {
-            if (!node.getValue().isLoaded()) {
-                continue;
-            }
-            if (getLevel().getBlockEntity(node.getKey()) instanceof DuctBlockEntity<?, ?> duct) {
-                duct.invalidateAttachments();
-            }
-            getLevel().invalidateCapabilities(node.getKey());
-        }
-    }
-
     // region IEnergyStorage
     @Override
     public int receiveEnergy(int maxReceive, boolean simulate) {

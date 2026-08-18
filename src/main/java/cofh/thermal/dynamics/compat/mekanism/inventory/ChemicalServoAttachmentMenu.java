@@ -122,8 +122,10 @@ public class ChemicalServoAttachmentMenu extends AttachmentMenu implements IFilt
     public FriendlyByteBuf getGuiPacket(FriendlyByteBuf buffer) {
 
         buffer.writeByte(getFilterSize());
-        for (ChemicalStack chemical : filter.getChemicals()) {
-            ChemicalStack.OPTIONAL_STREAM_CODEC.encode((RegistryFriendlyByteBuf) buffer, chemical);
+        if (filter != null) {
+            for (ChemicalStack chemical : filter.getChemicals()) {
+                ChemicalStack.OPTIONAL_STREAM_CODEC.encode((RegistryFriendlyByteBuf) buffer, chemical);
+            }
         }
         return buffer;
     }
@@ -131,10 +133,23 @@ public class ChemicalServoAttachmentMenu extends AttachmentMenu implements IFilt
     @Override
     public void handleGuiPacket(FriendlyByteBuf buffer) {
 
+        if (!buffer.isReadable()) {
+            return;
+        }
         int size = Byte.toUnsignedInt(buffer.readByte());
+        if (size > getFilterSize()) {
+            return;
+        }
         List<ChemicalStack> chemicals = new ArrayList<>(size);
-        for (int i = 0; i < size; ++i) {
-            chemicals.add(ChemicalStack.OPTIONAL_STREAM_CODEC.decode((RegistryFriendlyByteBuf) buffer));
+        try {
+            for (int i = 0; i < size; ++i) {
+                if (!buffer.isReadable()) {
+                    return;
+                }
+                chemicals.add(ChemicalStack.OPTIONAL_STREAM_CODEC.decode((RegistryFriendlyByteBuf) buffer));
+            }
+        } catch (RuntimeException ignored) {
+            return;
         }
         if (filterInventory != null) {
             filterInventory.readFromSource(chemicals);
@@ -147,7 +162,10 @@ public class ChemicalServoAttachmentMenu extends AttachmentMenu implements IFilt
     @Override
     public boolean setAllowList(boolean allowList) {
 
-        boolean result = filter != null && filter.setAllowList(allowList);
+        if (filter == null || attachment == null) {
+            return false;
+        }
+        boolean result = filter.setAllowList(allowList);
         if (attachment != null) {
             AttachmentConfigPacket.sendToServer(attachment);
         }
@@ -157,7 +175,10 @@ public class ChemicalServoAttachmentMenu extends AttachmentMenu implements IFilt
     @Override
     public boolean setCheckNBT(boolean checkNBT) {
 
-        boolean result = filter != null && filter.setCheckNBT(checkNBT);
+        if (filter == null || attachment == null) {
+            return false;
+        }
+        boolean result = filter.setCheckNBT(checkNBT);
         if (attachment != null) {
             AttachmentConfigPacket.sendToServer(attachment);
         }

@@ -30,11 +30,9 @@ public class TDynIDs {
     public static final String ID_SERVO_ATTACHMENT = "servo_attachment";
     public static final String ID_TURBO_SERVO_ATTACHMENT = "turbo_servo_attachment";
 
-    public static final String ID_FLUID_FILTER_ATTACHMENT = "fluid_filter_attachment";
     public static final String ID_FLUID_SERVO_ATTACHMENT = "fluid_servo_attachment";
     public static final String ID_FLUID_TURBO_SERVO_ATTACHMENT = "fluid_turbo_servo_attachment";
     public static final String ID_ITEM_SERVO_ATTACHMENT = "item_servo_attachment";
-    public static final String ID_ITEM_TURBO_SERVO_ATTACHMENT = "item_turbo_servo_attachment";
 
     public static final String ENERGY_LIMITER = "energy_limiter";
     public static final String FILTER = "filter";

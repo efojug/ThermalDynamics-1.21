@@ -56,33 +56,17 @@ public class ChemicalTurboServoAttachment extends ChemicalServoAttachment {
         if (!rsControl.getState()) {
             return;
         }
-        if (gridCap == null && duct.getGrid() instanceof ChemicalGrid grid) {
-            gridCap = grid;
-        }
-        if (externalCap == null && world() != null) {
-            net.minecraft.core.BlockPos target = pos().relative(side);
-            net.minecraft.world.level.block.entity.BlockEntity targetTile = world().getBlockEntity(target);
-            if (targetTile != null) {
-                externalCap = world().getCapability(cofh.thermal.dynamics.compat.mekanism.MekanismCompat.CHEMICAL_HANDLER,
-                        target, targetTile.getBlockState(), targetTile, side.getOpposite());
-            }
-        }
-        if (gridCap == null || externalCap == null) {
+        if (!(duct.getGrid() instanceof ChemicalGrid grid)) {
             return;
         }
-        for (int tank = 0; tank < externalCap.getChemicalTanks(); ++tank) {
-            ChemicalStack contained = externalCap.getChemicalInTank(tank);
-            if (contained.isEmpty() || !ChemicalFilterHelper.valid(filter, contained)) {
-                continue;
-            }
-            ChemicalStack simulated = externalCap.extractChemical(tank, Long.MAX_VALUE, Action.SIMULATE);
-            long accepted = simulated.getAmount() - gridCap.insertChemical(simulated, Action.SIMULATE).getAmount();
-            if (accepted <= 0) {
-                continue;
-            }
-            ChemicalStack actual = externalCap.extractChemical(tank, accepted, Action.EXECUTE);
-            if (!actual.isEmpty()) {
-                gridCap.insertChemical(actual, Action.EXECUTE);
+        IChemicalHandler external = externalHandler();
+        if (external == null) return;
+        long remaining = grid.overflowHeadroom();
+        for (int tank = 0; tank < external.getChemicalTanks() && remaining > 0; ++tank) {
+            long moved = transferTank(external, tank, remaining);
+            remaining -= moved;
+            if (moved == 0 && !grid.getOverflowBuffer().isEmpty()) {
+                break;
             }
         }
     }

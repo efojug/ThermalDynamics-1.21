@@ -32,9 +32,20 @@ public class AttachmentControlPacket {
             BlockPos pos = payload.pos();
             Direction side = payload.side();
 
+            FriendlyByteBuf buffer = payload.buf();
+            if (world == null || buffer == null || buffer.readableBytes() > 4096) {
+                return;
+            }
             BlockEntity tile = world.getBlockEntity(pos);
             if (tile instanceof IDuct<?, ?> duct && duct.getAttachment(side) instanceof IPacketHandlerAttachment attachment) {
-                attachment.handleControlPacket(payload.buf());
+                try {
+                    attachment.handleControlPacket(buffer);
+                } catch (RuntimeException ignored) {
+                    return;
+                }
+                if (buffer.isReadable()) {
+                    return;
+                }
             }
         });
     }
