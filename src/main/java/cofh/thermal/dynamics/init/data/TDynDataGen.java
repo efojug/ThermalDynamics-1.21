@@ -4,6 +4,7 @@ import cofh.thermal.dynamics.init.data.providers.TDynItemModelProvider;
 import cofh.thermal.dynamics.init.data.providers.TDynLootTableProvider;
 import cofh.thermal.dynamics.init.data.providers.TDynRecipeProvider;
 import cofh.thermal.dynamics.init.data.providers.TDynTagsProvider;
+import cofh.thermal.dynamics.init.data.providers.TDynChemicalCompatDataProvider;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.data.DataGenerator;
 import net.minecraft.data.PackOutput;
@@ -34,6 +35,7 @@ public class TDynDataGen {
 
         gen.addProvider(event.includeServer(), new TDynLootTableProvider(output, lookup));
         gen.addProvider(event.includeServer(), new TDynRecipeProvider(output, lookup));
+        gen.addProvider(event.includeServer(), new TDynChemicalCompatDataProvider(output));
 
         gen.addProvider(event.includeClient(), new TDynItemModelProvider(output, exFileHelper));
     }
