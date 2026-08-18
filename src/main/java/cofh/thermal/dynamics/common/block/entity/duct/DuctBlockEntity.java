@@ -67,6 +67,16 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
         modelData.setNeedsRefresh();
     }
 
+    @Override
+    public void onLoad() {
+
+        super.onLoad();
+        if (level != null) {
+            redstonePower = level.getBestNeighborSignal(worldPosition);
+            updateAttachmentRedstonePower();
+        }
+    }
+
     public boolean attemptConnect(Direction side) {
 
         if (level == null || Utils.isClientWorld(level)) {
@@ -151,6 +161,10 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
         invalidateAttachments();
         attachments[side.ordinal()] = attachment;
         connections[side.ordinal()] = FORCED;
+        if (level != null) {
+            redstonePower = level.getBestNeighborSignal(worldPosition);
+            updateAttachmentRedstonePower();
+        }
         getGrid().onAttachmentsChanged();
 
         ItemStack offhand = player.getItemInHand(InteractionHand.OFF_HAND);
@@ -384,12 +398,8 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
     @Override
     public void handleRedstonePacket(FriendlyByteBuf buffer) {
 
-        int power = buffer.readInt();
-        for (IAttachment attachment : attachments) {
-            if (attachment instanceof IRedstoneControllableAttachment redstoneControllableAttachment) {
-                redstoneControllableAttachment.redstoneControl().setPower(power);
-            }
-        }
+        redstonePower = buffer.readInt();
+        updateAttachmentRedstonePower();
     }
 
     // STATE
@@ -433,6 +443,7 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
                 }
             }
         }
+        updateAttachmentRedstonePower();
         refreshClientModels();
     }
     // endregion
@@ -466,6 +477,7 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
                 attachments[i] = EmptyAttachment.INSTANCE;
             }
         }
+        updateAttachmentRedstonePower();
         if (level != null && level.isClientSide()) {
             clientConnectionStateInitialized = bConn.length == 6;
             refreshClientModels();
@@ -552,14 +564,19 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
         }
         if (level != null) {
             redstonePower = level.getBestNeighborSignal(worldPosition);
-            for (IAttachment attachment : attachments) {
-                if (attachment instanceof IRedstoneControllableAttachment redstoneControllableAttachment) {
-                    redstoneControllableAttachment.redstoneControl().setPower(redstonePower);
-                }
-            }
+            updateAttachmentRedstonePower();
             TileRedstonePacket.sendToClient(this);
         }
         modelData.setNeedsRefresh();
+    }
+
+    protected void updateAttachmentRedstonePower() {
+
+        for (IAttachment attachment : attachments) {
+            if (attachment instanceof IRedstoneControllableAttachment redstoneControllableAttachment) {
+                redstoneControllableAttachment.setPower(redstonePower);
+            }
+        }
     }
 
     /**
