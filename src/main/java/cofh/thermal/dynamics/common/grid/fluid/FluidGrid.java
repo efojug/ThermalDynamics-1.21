@@ -14,6 +14,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.capabilities.BlockCapability;
 import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.common.Tags;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 
@@ -33,12 +34,14 @@ import static cofh.thermal.dynamics.init.registries.TDynGrids.FLUID_GRID;
 public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidHandler {
 
     protected static final int DUCT_CAPACITY = 3000;
+    private static final int MIN_GAS_RENDER_ALPHA = Math.round(0.2F * 255.0F);
 
     protected static final String TAG_STORAGE = "Storage";
 
     protected final FluidGridStorage storage = new FluidGridStorage(0);
 
     protected FluidStack renderFluid = FluidStack.EMPTY;
+    protected int renderAlpha = 0xFF;
     protected TimeTracker timeTracker = new TimeTracker();
     protected boolean wasFilled;
     protected boolean needsUpdate;
@@ -119,11 +122,14 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
 
         FluidStack fluid = getFluid();
         boolean renderFluidChanged = !FluidHelper.fluidsEqual(renderFluid, fluid);
+        int updatedRenderAlpha = getRenderAlpha(fluid);
+        boolean renderAlphaChanged = renderAlpha != updatedRenderAlpha;
         if (renderFluidChanged) {
             renderFluid = fluid.isEmpty() ? FluidStack.EMPTY : fluid.copyWithAmount(BUCKET_VOLUME);
         }
+        renderAlpha = updatedRenderAlpha;
 
-        if (renderFluidChanged || wasFilled && timeTracker.hasDelayPassed(world, 40) || needsUpdate) {
+        if (renderFluidChanged || renderAlphaChanged || wasFilled && timeTracker.hasDelayPassed(world, 40) || needsUpdate) {
             if (!wasFilled && renderFluid.isEmpty()) {
                 timeTracker.markTime(world);
                 wasFilled = true;
@@ -133,6 +139,22 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
             wasFilled = false;
             needsUpdate = false;
         }
+    }
+
+    private int getRenderAlpha(FluidStack fluid) {
+
+        if (!isLighterThanAirGas(fluid) || storage.getCapacity() <= 0) {
+            return 0xFF;
+        }
+        float scale = Math.min(1.0F, fluid.getAmount() / (float) storage.getCapacity());
+
+        // Matches Mekanism's mechanical pipe opacity for lighter-than-air gaseous fluids.
+        return Math.max(MIN_GAS_RENDER_ALPHA, Math.round(scale * 255.0F));
+    }
+
+    public static boolean isLighterThanAirGas(FluidStack fluid) {
+
+        return !fluid.isEmpty() && fluid.is(Tags.Fluids.GASEOUS) && fluid.getFluidType().getDensity(fluid) <= 0;
     }
 
     @Override
@@ -278,6 +300,7 @@ public class FluidGrid extends Grid<FluidGrid, FluidGridNode> implements IFluidH
     public int getCapacity() { return storage.getCapacity(); }
     public FluidStack getFluid() { return storage.getFluid(); }
     public FluidStack getRenderFluid() { return renderFluid; }
+    public int getRenderAlpha() { return renderAlpha; }
     public int getFluidAmount() { return storage.getFluid().getAmount(); }
     public void setCapacity(int capacity) { storage.setCapacity(capacity); }
     public void setFluid(FluidStack fluid) { storage.setFluid(fluid); }

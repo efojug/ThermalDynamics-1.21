@@ -10,6 +10,7 @@ import cofh.thermal.dynamics.common.network.packet.server.AttachmentConfigPacket
 import cofh.thermal.dynamics.common.network.packet.server.AttachmentRedstoneControlPacket;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
+import net.neoforged.fml.ModList;
 
 import static cofh.lib.util.constants.ModIds.ID_THERMAL_DYNAMICS;
 
@@ -22,6 +23,9 @@ public class PacketHandler {
         // SERVER
         registrar.playToServer(AttachmentConfigPayload.TYPE, AttachmentConfigPayload.STREAM_CODEC, AttachmentConfigPacket.get()::handle);
         registrar.playToServer(AttachmentRedstoneControlPayload.TYPE, AttachmentRedstoneControlPayload.STREAM_CODEC, AttachmentRedstoneControlPacket.get()::handle);
+        if (ModList.get().isLoaded("mekanism")) {
+            cofh.thermal.dynamics.compat.mekanism.MekanismCompat.registerNetworking(registrar);
+        }
 
         // CLIENT
         registrar.playToClient(AttachmentControlPayload.TYPE, AttachmentControlPayload.STREAM_CODEC, AttachmentControlPacket.get()::handle);

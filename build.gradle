@@ -92,6 +92,7 @@ repositories {
     mavenLocal()
     mavenCentral()
     maven { url 'https://maven.covers1624.net/' }
+    maven { url 'https://modmaven.dev/' }
     maven { url 'https://maven.blamejared.com/' }
     maven { url 'https://maven.theillusivec4.top/' }
 }
@@ -105,6 +106,8 @@ dependencies {
     shadow("net.covers1624:Quack:0.4.10.105")
 
     compileOnly("org.jetbrains:annotations:22.0.0")
+    compileOnly("mezz.jei:jei-${mc_version}-neoforge-api:19.44.0.401")
+    compileOnly(files("../Mekanism-1.21.1-10.7.19.85-api.jar"))
 
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.8.2")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.8.2")

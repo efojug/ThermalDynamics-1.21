@@ -25,7 +25,7 @@ public class DuctModelData {
     @Nullable
     private ResourceLocation[] attachments;
 
-    private int fillColor = 0xFFFFFF;
+    private int fillColor = 0xFFFFFFFF;
     private boolean fillLuminous = false;
 
     public DuctModelData() {
@@ -150,6 +150,11 @@ public class DuctModelData {
     public boolean isFillLuminous() {
 
         return fillLuminous;
+    }
+
+    public boolean isFillTranslucent() {
+
+        return fill != null && (fillColor >>> 24) < 0xFF;
     }
 
     @Override

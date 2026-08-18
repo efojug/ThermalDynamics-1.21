@@ -6,6 +6,7 @@ import cofh.lib.client.renderer.block.model.RetexturedBakedQuad;
 import cofh.thermal.dynamics.client.model.data.DuctModelData;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.RenderType;
@@ -35,6 +36,7 @@ import static cofh.thermal.dynamics.client.model.data.DuctModelData.DUCT_MODEL_D
 public class DuctBakedModel implements IDynamicBakedModel {
 
     private static final boolean DEBUG = Boolean.getBoolean("DuctModel.debug");
+    private static final int COLOR_OFFSET = findColorOffset();
 
     private static final DuctModelData INV_DATA = Util.make(new DuctModelData(), data -> {
         data.setInternalConnection(Direction.UP, true);
@@ -83,7 +85,14 @@ public class DuctBakedModel implements IDynamicBakedModel {
         if (!(extraData.has(DUCT_MODEL_DATA))) {
             return ImmutableList.of();
         }
-        return getModelFor(extraData.get(DUCT_MODEL_DATA));
+        DuctModelData modelData = extraData.get(DUCT_MODEL_DATA);
+        if (renderType == RenderType.translucent()) {
+            return modelData.isFillTranslucent() ? getFillModelFor(modelData) : ImmutableList.of();
+        }
+        if (renderType == RenderType.cutout() && modelData.isFillTranslucent()) {
+            return getShellModelFor(modelData);
+        }
+        return getModelFor(modelData);
     }
 
     private List<BakedQuad> getModelFor(DuctModelData modelData) {
@@ -93,15 +102,43 @@ public class DuctBakedModel implements IDynamicBakedModel {
         while (true) {
             CacheState state = cacheState;
             List<BakedQuad> modelQuads = DEBUG
-                    ? bakeModel(state, cacheKey)
-                    : state.modelCache.computeIfAbsent(cacheKey, key -> bakeModel(state, key));
+                    ? bakeModel(state, cacheKey, true, true)
+                    : state.modelCache.computeIfAbsent(cacheKey, key -> bakeModel(state, key, true, true));
             if (state == cacheState) {
                 return modelQuads;
             }
         }
     }
 
-    private List<BakedQuad> bakeModel(CacheState state, DuctModelData modelData) {
+    private List<BakedQuad> getShellModelFor(DuctModelData modelData) {
+
+        DuctModelData cacheKey = new DuctModelData(modelData);
+        while (true) {
+            CacheState state = cacheState;
+            List<BakedQuad> modelQuads = DEBUG
+                    ? bakeModel(state, cacheKey, true, false)
+                    : state.shellCache.computeIfAbsent(cacheKey, key -> bakeModel(state, key, true, false));
+            if (state == cacheState) {
+                return modelQuads;
+            }
+        }
+    }
+
+    private List<BakedQuad> getFillModelFor(DuctModelData modelData) {
+
+        DuctModelData cacheKey = new DuctModelData(modelData);
+        while (true) {
+            CacheState state = cacheState;
+            List<BakedQuad> modelQuads = DEBUG
+                    ? bakeModel(state, cacheKey, false, true)
+                    : state.fillModelCache.computeIfAbsent(cacheKey, key -> bakeModel(state, key, false, true));
+            if (state == cacheState) {
+                return modelQuads;
+            }
+        }
+    }
+
+    private List<BakedQuad> bakeModel(CacheState state, DuctModelData modelData, boolean includeShell, boolean includeFill) {
 
         ImmutableList.Builder<BakedQuad> quads = ImmutableList.builder();
         for (Direction dir : DIRECTIONS) {
@@ -110,14 +147,22 @@ public class DuctBakedModel implements IDynamicBakedModel {
             ResourceLocation attachment = modelData.getAttachment(dir);
 
             if (!internal && !external) {
-                List<BakedQuad> fillQuads = rebakeFill(state.centerFillCache, centerFill, modelData.getFill(), modelData.getFillColor(), modelData.isFillLuminous(), dir);
-                quads.addAll(filterBlank(centerModel.get(dir), false));
-                quads.addAll(filterBlank(fillQuads, false));
+                if (includeShell) {
+                    quads.addAll(filterBlank(centerModel.get(dir), false));
+                }
+                if (includeFill) {
+                    List<BakedQuad> fillQuads = rebakeFill(state.centerFillCache, centerFill, modelData.getFill(), modelData.getFillColor(), modelData.isFillLuminous(), dir);
+                    quads.addAll(filterBlank(fillQuads, false));
+                }
             } else {
-                List<BakedQuad> fillQuads = rebakeFill(state.fillCache, fill, modelData.getFill(), modelData.getFillColor(), modelData.isFillLuminous(), dir);
-                quads.addAll(filterBlank(sides.get(dir), !fillQuads.isEmpty()));
-                quads.addAll(filterBlank(fillQuads, false));
-                if (external) {
+                if (includeShell) {
+                    quads.addAll(filterBlank(sides.get(dir), modelData.getFill() != null));
+                }
+                if (includeFill) {
+                    List<BakedQuad> fillQuads = rebakeFill(state.fillCache, fill, modelData.getFill(), modelData.getFillColor(), modelData.isFillLuminous(), dir);
+                    quads.addAll(filterBlank(fillQuads, false));
+                }
+                if (includeShell && external) {
                     quads.addAll(filterBlank(rebakeAttachment(state.attachmentCache, connections, attachment, dir), true));
                 }
             }
@@ -159,7 +204,8 @@ public class DuctBakedModel implements IDynamicBakedModel {
             // Retexture
             List<BakedQuad> newQuads = new ArrayList<>(fillQuads.size());
             for (BakedQuad quad : fillQuads) {
-                BakedQuad retexturedQuad = new RetexturedBakedQuad(RenderHelper.mulColor(quad, key.color()), sprite);
+                BakedQuad tintedQuad = RenderHelper.mulColor(quad, key.color());
+                BakedQuad retexturedQuad = new RetexturedBakedQuad(applyAlpha(tintedQuad, key.color() >>> 24), sprite);
                 if (key.luminous()) {
                     retexturedQuad = net.neoforged.neoforge.client.model.QuadTransformers.settingMaxEmissivity().process(retexturedQuad);
                 }
@@ -167,6 +213,32 @@ public class DuctBakedModel implements IDynamicBakedModel {
             }
             return ImmutableList.copyOf(newQuads);
         });
+    }
+
+    private static int findColorOffset() {
+
+        for (int i = 0; i < DefaultVertexFormat.BLOCK.getElements().size(); ++i) {
+            if (DefaultVertexFormat.BLOCK.getElements().get(i).usage() == com.mojang.blaze3d.vertex.VertexFormatElement.Usage.COLOR) {
+                return DefaultVertexFormat.BLOCK.getOffset(DefaultVertexFormat.BLOCK.getElements().get(i)) / Integer.BYTES;
+            }
+        }
+        return -1;
+    }
+
+    private static BakedQuad applyAlpha(BakedQuad quad, int alpha) {
+
+        if (alpha == 0xFF || COLOR_OFFSET < 0) {
+            return quad;
+        }
+        int[] vertices = quad.getVertices().clone();
+        int stride = DefaultVertexFormat.BLOCK.getVertexSize() / Integer.BYTES;
+        for (int vertex = 0; vertex < 4; ++vertex) {
+            int index = vertex * stride + COLOR_OFFSET;
+            int existingAlpha = vertices[index] >>> 24;
+            int combinedAlpha = existingAlpha * alpha / 0xFF;
+            vertices[index] = vertices[index] & 0x00FFFFFF | combinedAlpha << 24;
+        }
+        return new BakedQuad(vertices, quad.getTintIndex(), quad.getDirection(), quad.getSprite(), quad.isShade());
     }
 
     private List<BakedQuad> rebakeAttachment(ConcurrentMap<AttachmentCacheKey, List<BakedQuad>> cache, Map<Direction, List<BakedQuad>> raw, @Nullable ResourceLocation texture, Direction dir) {
@@ -199,6 +271,8 @@ public class DuctBakedModel implements IDynamicBakedModel {
     private static class CacheState {
 
         private final ConcurrentMap<DuctModelData, List<BakedQuad>> modelCache = new ConcurrentHashMap<>();
+        private final ConcurrentMap<DuctModelData, List<BakedQuad>> shellCache = new ConcurrentHashMap<>();
+        private final ConcurrentMap<DuctModelData, List<BakedQuad>> fillModelCache = new ConcurrentHashMap<>();
         private final ConcurrentMap<FillCacheKey, List<BakedQuad>> centerFillCache = new ConcurrentHashMap<>();
         private final ConcurrentMap<FillCacheKey, List<BakedQuad>> fillCache = new ConcurrentHashMap<>();
         private final ConcurrentMap<AttachmentCacheKey, List<BakedQuad>> attachmentCache = new ConcurrentHashMap<>();

@@ -1,0 +1,5 @@
+{
+  "variants": {
+    "": [{ "model": "thermal:block/chemical_duct" }]
+  }
+}

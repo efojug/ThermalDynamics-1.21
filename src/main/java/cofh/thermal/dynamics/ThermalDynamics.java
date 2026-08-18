@@ -27,6 +27,7 @@ import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.ModList;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.capabilities.BlockCapability;
@@ -59,10 +60,17 @@ public class ThermalDynamics {
 
     public static final Registry<IGridType<?>> GRID_TYPE_REGISTRY = GRIDS.makeRegistry(e -> e.sync(false));
 
+    private static boolean mekanismLoaded;
+
     public ThermalDynamics(ModContainer modContainer, IEventBus modEventBus) {
 
         setFeatureFlags();
         CONFIG_MANAGER.register(modEventBus).addServerConfig(new TDynConfig());
+
+        mekanismLoaded = ModList.get().isLoaded("mekanism");
+        if (mekanismLoaded) {
+            cofh.thermal.dynamics.compat.mekanism.MekanismCompat.register();
+        }
 
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(this::clientSetup);
@@ -114,6 +122,10 @@ public class ThermalDynamics {
         event.registerBlockEntity(TDynApi.GRID_HOST_CAPABILITY, FLUID_DUCT_BLOCK_ENTITY.get(), (tile, ctx) -> tile);
         event.registerBlockEntity(TDynApi.GRID_HOST_CAPABILITY, FLUID_DUCT_WINDOWED_BLOCK_ENTITY.get(), (tile, ctx) -> tile);
         event.registerBlockEntity(TDynApi.GRID_HOST_CAPABILITY, ITEM_DUCT_BLOCK_ENTITY.get(), (tile, ctx) -> tile);
+        if (mekanismLoaded) {
+            cofh.thermal.dynamics.compat.mekanism.MekanismCompat.registerCapabilities(event);
+        }
+
         registerPassthroughCapability(event, Capabilities.EnergyStorage.BLOCK, unsafeCast(ENERGY_DUCT_BLOCK_ENTITY.get()));
         registerPassthroughCapability(event, Capabilities.FluidHandler.BLOCK, unsafeCast(FLUID_DUCT_BLOCK_ENTITY.get()));
         registerPassthroughCapability(event, Capabilities.FluidHandler.BLOCK, unsafeCast(FLUID_DUCT_WINDOWED_BLOCK_ENTITY.get()));
@@ -139,11 +151,16 @@ public class ThermalDynamics {
         event.register(FLUID_TURBO_SERVO_ATTACHMENT_CONTAINER.get(), FluidTurboServoAttachmentScreen::new);
         event.register(ITEM_SERVO_ATTACHMENT_CONTAINER.get(), ItemServoAttachmentScreen::new);
         event.register(ITEM_TURBO_SERVO_ATTACHMENT_CONTAINER.get(), ItemTurboServoAttachmentScreen::new);
+        if (mekanismLoaded) {
+            cofh.thermal.dynamics.compat.mekanism.client.MekanismClientCompat.registerMenuScreens(event);
+        }
     }
 
     private void registerRenderLayers() {
 
         RenderType cutout = RenderType.cutout();
+        RenderType translucent = RenderType.translucent();
+
         // RenderTypeLookup.setRenderLayer(ENERGY_DISTRIBUTOR_BLOCK, cutout);
 
         // RenderTypeLookup.setRenderLayer(BLOCKS.get(ID_ENDER_TUNNEL), translucent);
@@ -152,9 +169,12 @@ public class ThermalDynamics {
         // RenderTypeLookup.setRenderLayer(BLOCKS.get(ID_DEVICE_ITEM_BUFFER), cutout);
 
         ItemBlockRenderTypes.setRenderLayer(BLOCKS.get(ID_ENERGY_DUCT), cutout);
-        ItemBlockRenderTypes.setRenderLayer(BLOCKS.get(ID_FLUID_DUCT), cutout);
-        ItemBlockRenderTypes.setRenderLayer(BLOCKS.get(ID_FLUID_DUCT_WINDOWED), cutout);
+        ItemBlockRenderTypes.setRenderLayer(BLOCKS.get(ID_FLUID_DUCT), renderType -> renderType == cutout || renderType == translucent);
+        ItemBlockRenderTypes.setRenderLayer(BLOCKS.get(ID_FLUID_DUCT_WINDOWED), renderType -> renderType == cutout || renderType == translucent);
         ItemBlockRenderTypes.setRenderLayer(BLOCKS.get(ID_ITEM_DUCT), cutout);
+        if (mekanismLoaded) {
+            cofh.thermal.dynamics.compat.mekanism.client.MekanismClientCompat.registerRenderLayers(cutout, translucent);
+        }
     }
     // endregion
 }

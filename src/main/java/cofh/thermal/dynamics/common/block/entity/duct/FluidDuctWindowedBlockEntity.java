@@ -6,6 +6,7 @@ import cofh.core.util.helpers.RenderHelper;
 import cofh.lib.api.block.entity.IPacketHandlerTile;
 import cofh.thermal.dynamics.api.grid.IGridHostLuminous;
 import cofh.thermal.dynamics.api.grid.IGridHostUpdateable;
+import cofh.thermal.dynamics.common.grid.fluid.FluidGrid;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
@@ -24,7 +25,10 @@ import static cofh.thermal.dynamics.init.registries.TDynBlockEntities.FLUID_DUCT
 
 public class FluidDuctWindowedBlockEntity extends FluidDuctBlockEntity implements IGridHostUpdateable, IGridHostLuminous, IPacketHandlerTile {
 
+    private static final String TAG_RENDER_ALPHA = "RenderAlpha";
+
     FluidStack renderFluid = FluidStack.EMPTY;
+    private int renderAlpha = 0xFF;
 
     public FluidDuctWindowedBlockEntity(BlockPos pos, BlockState state) {
 
@@ -41,6 +45,7 @@ public class FluidDuctWindowedBlockEntity extends FluidDuctBlockEntity implement
     public void update() {
 
         renderFluid = getGrid().getRenderFluid();
+        renderAlpha = getGrid().getRenderAlpha();
         TileStatePacket.sendToClient(this);
     }
 
@@ -55,7 +60,13 @@ public class FluidDuctWindowedBlockEntity extends FluidDuctBlockEntity implement
     public ModelData getModelData() {
 
         modelData.setFill(renderFluid.isEmpty() ? BLANK_TEXTURE : RenderHelper.getFluidTexture(renderFluid).contents().name());
-        modelData.setFillColor(FluidHelper.color(renderFluid));
+        int color = FluidHelper.color(renderFluid);
+        boolean lighterThanAirGas = FluidGrid.isLighterThanAirGas(renderFluid);
+        if (lighterThanAirGas) {
+            color = renderAlpha << 24 | color & 0xFFFFFF;
+        }
+        int alpha = (color >>> 24) * 99 / 100;
+        modelData.setFillColor(alpha << 24 | color & 0xFFFFFF);
         modelData.setFillLuminous(FluidHelper.luminosity(renderFluid) > 0);
         return super.getModelData();
     }
@@ -67,6 +78,7 @@ public class FluidDuctWindowedBlockEntity extends FluidDuctBlockEntity implement
         if (!renderFluid.isEmpty()) {
             tag.put(TAG_RENDER_FLUID, renderFluid.save(provider, new CompoundTag()));
         }
+        tag.putInt(TAG_RENDER_ALPHA, renderAlpha);
         super.saveAdditional(tag, provider);
     }
 
@@ -76,6 +88,7 @@ public class FluidDuctWindowedBlockEntity extends FluidDuctBlockEntity implement
         super.loadAdditional(tag, provider);
 
         renderFluid = FluidStack.parseOptional(provider, tag.getCompound(TAG_RENDER_FLUID));
+        renderAlpha = tag.contains(TAG_RENDER_ALPHA) ? tag.getInt(TAG_RENDER_ALPHA) : 0xFF;
     }
     // endregion
 
@@ -91,6 +104,7 @@ public class FluidDuctWindowedBlockEntity extends FluidDuctBlockEntity implement
     public FriendlyByteBuf getStatePacket(FriendlyByteBuf buffer) {
 
         FluidStack.OPTIONAL_STREAM_CODEC.encode((RegistryFriendlyByteBuf) buffer, renderFluid);
+        buffer.writeByte(renderAlpha);
 
         super.getStatePacket(buffer);
 
@@ -101,6 +115,7 @@ public class FluidDuctWindowedBlockEntity extends FluidDuctBlockEntity implement
     public void handleStatePacket(FriendlyByteBuf buffer) {
 
         renderFluid = FluidStack.OPTIONAL_STREAM_CODEC.decode((RegistryFriendlyByteBuf) buffer);
+        renderAlpha = buffer.readUnsignedByte();
 
         super.handleStatePacket(buffer);
     }

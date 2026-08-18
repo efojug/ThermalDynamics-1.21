@@ -44,3 +44,10 @@ type = "required"
 versionRange = "${thermal_core_version_range}"
 ordering = "AFTER"
 side = "BOTH"
+
+[[dependencies.thermal_dynamics]]
+modId = "mekanism"
+type = "optional"
+versionRange = "[10.7.18,)"
+ordering = "AFTER"
+side = "BOTH"
