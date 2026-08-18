@@ -166,7 +166,7 @@ public class EnergyLimiterAttachment implements IAttachment, IRedstoneControllab
                 return (T) gridCap;
             }
             if (gridCapIn instanceof IEnergyStorage storage) {
-                gridCap = new WrappedEnergyStorage(storage, this::getInputLimit, this::getOutputLimit);
+                gridCap = new WrappedEnergyStorage(storage, this::getOutputLimit, this::getInputLimit);
                 return (T) gridCap;
             }
         }
@@ -183,7 +183,7 @@ public class EnergyLimiterAttachment implements IAttachment, IRedstoneControllab
                 return (T) extCap;
             }
             if (extCapIn instanceof IEnergyStorage storage) {
-                extCap = new WrappedEnergyStorage(storage, this::getOutputLimit, this::getInputLimit);
+                extCap = new WrappedEnergyStorage(storage, this::getInputLimit, this::getOutputLimit);
                 return (T) extCap;
             }
         }
