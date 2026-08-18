@@ -50,6 +50,8 @@ import static cofh.thermal.dynamics.client.model.data.DuctModelData.DUCT_MODEL_D
 public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G>> extends BlockEntity implements IDuct<G, N>, ITileLocation, IPacketHandlerTile {
 
     protected final DuctModelData modelData = new DuctModelData();
+    @Nullable
+    private volatile ModelData cachedModelData;
     // Only available server side.
     @Nullable
     protected G grid = null;
@@ -146,6 +148,7 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
         if (attachment == null || attachment == EmptyAttachment.INSTANCE) {
             return false;
         }
+        invalidateAttachments();
         attachments[side.ordinal()] = attachment;
         connections[side.ordinal()] = FORCED;
         getGrid().onAttachmentsChanged();
@@ -165,14 +168,12 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
 
     public boolean attemptAttachmentRemove(Direction side, Player player) {
 
-        if (attachments[side.ordinal()] instanceof ItemServoAttachment servo) {
-            servo.dropStuffedItems();
-        }
         ItemStack attachmentItem = attachments[side.ordinal()].getItem();
         if (!attachmentItem.isEmpty()) {
             if (player == null || !player.addItem(attachmentItem)) {
                 Utils.dropDismantleStackIntoWorld(attachmentItem, level, worldPosition);
             }
+            invalidateAttachments();
             attachments[side.ordinal()] = EmptyAttachment.INSTANCE;
             IDuct<?, ?> adjacent = GridHelper.getGridHost(level, getBlockPos().relative(side));
             connections[side.ordinal()] = adjacent == null ? ALLOWED : DISABLED;
@@ -221,8 +222,8 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
 
     public boolean openAttachmentGui(Direction side, Player player) {
 
-        if (side != null && attachments[side.ordinal()] instanceof MenuProvider provider) {
-            AttachmentHelper.openAttachmentScreen((ServerPlayer) player, provider, pos(), side);
+        if (side != null && player instanceof ServerPlayer serverPlayer && attachments[side.ordinal()] instanceof MenuProvider provider) {
+            AttachmentHelper.openAttachmentScreen(serverPlayer, provider, pos(), side);
             return true;
         }
         return false;
@@ -231,9 +232,6 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
     public void dropAttachments() {
 
         for (Direction dir : DIRECTIONS) {
-            if (attachments[dir.ordinal()] instanceof ItemServoAttachment servo) {
-                servo.dropStuffedItems();
-            }
             ItemStack attachmentItem = attachments[dir.ordinal()].getItem();
             if (!attachmentItem.isEmpty()) {
                 Utils.dropDismantleStackIntoWorld(attachmentItem, level, worldPosition);
@@ -249,14 +247,12 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
     public void dismantleAttachments(Player player, boolean returnDrops) {
 
         for (Direction dir : DIRECTIONS) {
-            if (attachments[dir.ordinal()] instanceof ItemServoAttachment servo) {
-                servo.dropStuffedItems();
-            }
             ItemStack attachmentItem = attachments[dir.ordinal()].getItem();
             if (!attachmentItem.isEmpty()) {
                 if (!returnDrops || player == null || !player.addItem(attachmentItem)) {
                     Utils.dropDismantleStackIntoWorld(attachmentItem, level, worldPosition);
                 }
+                invalidateAttachments();
                 attachments[dir.ordinal()] = EmptyAttachment.INSTANCE;
             }
         }
@@ -291,13 +287,15 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
         }
     }
 
-    // This is called only in getShape()
+    // Shared by getShape() and getModelData() so both consumers observe the same recomputed state.
     @Nonnull
     public DuctModelData getDuctModelData() {
 
         if (modelData.needsRefresh()) {
             if (level != null && level.isClientSide()) {
                 calcDuctModelDataClient();
+                // getShape() may consume the dirty flag before getModelData(); invalidate the published snapshot too.
+                cachedModelData = null;
             } else {
                 calcDuctModelDataServer();
             }
@@ -337,11 +335,33 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
     @Override
     public ModelData getModelData() {
 
-        calcDuctModelDataClient();
-        return ModelData.builder()
-                // ModelData is consumed by the parallel section renderer. Never expose this mutable working instance.
-                .with(DUCT_MODEL_DATA, new DuctModelData(modelData))
-                .build();
+        ModelData cached = cachedModelData;
+        if (cached == null || modelData.needsRefresh()) {
+            DuctModelData current = getDuctModelData();
+            cached = ModelData.builder()
+                    // Publish a snapshot; the mutable working model is never exposed to the renderer.
+                    .with(DUCT_MODEL_DATA, new DuctModelData(current))
+                    .build();
+            cachedModelData = cached;
+        }
+        return cached;
+    }
+
+    /**
+     * Keep NeoForge's model-data refresh queue and the duct's published snapshot cache in sync. Both
+     * network model updates and client-side neighbor shape changes enter through this method.
+     */
+    @Override
+    public void requestModelDataUpdate() {
+
+        modelData.setNeedsRefresh();
+        cachedModelData = null;
+        if (level != null && level.isClientSide()) {
+            var modelDataManager = level.getModelDataManager();
+            if (modelDataManager != null) {
+                modelDataManager.requestRefresh(this);
+            }
+        }
     }
 
     // region NETWORK
@@ -497,15 +517,20 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
     @Override
     public final G getGrid() {
 
+        if (level == null) {
+            throw new IllegalStateException("Duct has no level @ " + getBlockPos());
+        }
         if (level.isClientSide()) {
             throw new UnsupportedOperationException("No grid representation on client.");
         }
         if (grid == null) {
             IGridContainer gridContainer = IGridContainer.getGrid(level);
-            assert gridContainer != null;
+            if (gridContainer == null) {
+                // Assertions are disabled in production; preserve dimension and position context.
+                throw new IllegalStateException("No grid container for level " + level.dimension() + " @ " + getBlockPos());
+            }
             grid = gridContainer.getGrid(getGridType(), getBlockPos());
         }
-        // assert grid != null;
         return grid;
     }
 
@@ -556,7 +581,6 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
 
     private static void refreshClientModel(DuctBlockEntity<?, ?> duct) {
 
-        duct.modelData.setNeedsRefresh();
         duct.requestModelDataUpdate();
         Level world = duct.level;
         if (world != null) {
@@ -599,12 +623,17 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
     @Override
     public void setConnectionType(Direction dir, ConnectionType type) {
 
+        if (dir == null || type == null || connections[dir.ordinal()] == type) {
+            return;
+        }
         connections[dir.ordinal()] = type;
+        if (level == null || level.isClientSide() || isRemoved()) {
+            return;
+        }
         setChanged();
         callNeighborStateChange();
-        if (level != null) {
-            level.invalidateCapabilities(worldPosition);
-        }
+        level.invalidateCapabilities(worldPosition);
+        if (grid != null) grid.onModified();
         TileStatePacket.sendToClient(this);
     }
     // endregion

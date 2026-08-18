@@ -6,7 +6,7 @@ import cofh.lib.common.inventory.SlotFalseCopy;
 import cofh.lib.common.inventory.wrapper.InvWrapperGeneric;
 import cofh.lib.util.helpers.MathHelper;
 import cofh.thermal.dynamics.api.grid.IDuct;
-import cofh.thermal.dynamics.common.attachment.ItemServoAttachment;
+import cofh.thermal.dynamics.common.attachment.ItemFilterAttachment;
 import cofh.thermal.dynamics.common.network.packet.server.AttachmentConfigPacket;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -19,7 +19,7 @@ import static cofh.thermal.dynamics.init.registries.TDynContainers.ITEM_SERVO_AT
 
 public class ItemServoAttachmentMenu extends AttachmentMenu implements IFilterOptions {
 
-    public final ItemServoAttachment attachment;
+    public final ItemFilterAttachment attachment;
     protected final BaseItemFilter filter;
     protected final InvWrapperGeneric filterInventory;
 
@@ -31,7 +31,7 @@ public class ItemServoAttachmentMenu extends AttachmentMenu implements IFilterOp
     protected ItemServoAttachmentMenu(MenuType<?> type, int id, Level world, BlockPos pos, Direction side, Inventory inventory, Player player) {
 
         super(type, id, world, pos, side, inventory, player);
-        attachment = hostTile instanceof IDuct<?, ?> duct && duct.getAttachment(side) instanceof ItemServoAttachment itemServo ? itemServo : null;
+        attachment = hostTile instanceof IDuct<?, ?> duct && duct.getAttachment(side) instanceof ItemFilterAttachment itemFilter ? itemFilter : null;
         filter = attachment == null ? BaseItemFilter.ZERO : (BaseItemFilter) attachment.getFilter();
         allowSwap = false;
         filterInventory = new InvWrapperGeneric(this, filter.getItems(), filter.size()) {

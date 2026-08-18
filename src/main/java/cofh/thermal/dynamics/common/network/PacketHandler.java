@@ -2,10 +2,12 @@ package cofh.thermal.dynamics.common.network;
 
 import cofh.thermal.dynamics.common.network.data.client.AttachmentControlPayload;
 import cofh.thermal.dynamics.common.network.data.client.GridDebugPayload;
+import cofh.thermal.dynamics.common.network.data.client.TravelingItemsPayload;
 import cofh.thermal.dynamics.common.network.data.server.AttachmentConfigPayload;
 import cofh.thermal.dynamics.common.network.data.server.AttachmentRedstoneControlPayload;
 import cofh.thermal.dynamics.common.network.packet.client.AttachmentControlPacket;
 import cofh.thermal.dynamics.common.network.packet.client.GridDebugPacket;
+import cofh.thermal.dynamics.common.network.packet.client.TravelingItemsPacket;
 import cofh.thermal.dynamics.common.network.packet.server.AttachmentConfigPacket;
 import cofh.thermal.dynamics.common.network.packet.server.AttachmentRedstoneControlPacket;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
@@ -30,5 +32,6 @@ public class PacketHandler {
         // CLIENT
         registrar.playToClient(AttachmentControlPayload.TYPE, AttachmentControlPayload.STREAM_CODEC, AttachmentControlPacket.get()::handle);
         registrar.playToClient(GridDebugPayload.TYPE, GridDebugPayload.STREAM_CODEC, GridDebugPacket.get()::handle);
+        registrar.playToClient(TravelingItemsPayload.TYPE, TravelingItemsPayload.STREAM_CODEC, TravelingItemsPacket.get()::handle);
     }
 }

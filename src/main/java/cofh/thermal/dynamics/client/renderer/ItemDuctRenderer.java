@@ -1,6 +1,7 @@
 package cofh.thermal.dynamics.client.renderer;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import cofh.thermal.dynamics.client.model.data.DuctModelData;
 import cofh.thermal.dynamics.common.block.entity.duct.ItemDuctBlockEntity;
 import cofh.thermal.dynamics.common.grid.item.TravelingItem;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -20,15 +21,31 @@ public class ItemDuctRenderer implements BlockEntityRenderer<ItemDuctBlockEntity
     }
 
     @Override
+    public int getViewDistance() {
+
+        // Traveling items are rendered at 0.28 scale; beyond ~32 blocks they are indiscernible.
+        return 32;
+    }
+
+    @Override
     public void render(ItemDuctBlockEntity duct, float partialTick, PoseStack poseStack, MultiBufferSource buffer, int packedLight, int packedOverlay) {
 
+        DuctModelData model = duct.getDuctModelData();
         for (TravelingItem item : duct.getTravelingItems()) {
             if (item.stack().isEmpty()) {
                 continue;
             }
-            float travel = Math.min(1.0F, (item.progress() + item.speed() * partialTick) / TravelingItem.DUCT_LENGTH);
+            float interpolated = item.clientAnimating() ? item.progress() + item.speed() * partialTick : item.progress();
+            float travel = item.waiting() ? 0.5F
+                    : Math.min(1.0F, Math.min(interpolated, TravelingItem.DUCT_LENGTH) / TravelingItem.DUCT_LENGTH);
             float offset = travel - 0.5F;
             var direction = offset < 0.0F ? item.incomingDirection() : item.direction();
+            // Never render an item beyond a side the duct has no connection arm on (e.g. the next
+            // duct was just broken): hold it at the duct core instead of floating in open air.
+            var armSide = offset < 0.0F ? direction.getOpposite() : direction;
+            if (offset != 0.0F && !model.hasInternalConnection(armSide) && !model.hasExternalConnection(armSide)) {
+                offset = 0.0F;
+            }
             poseStack.pushPose();
             poseStack.translate(0.5F + direction.getStepX() * offset,
                     0.5F + direction.getStepY() * offset,

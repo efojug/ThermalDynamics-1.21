@@ -2,7 +2,7 @@ package cofh.thermal.dynamics.common.grid.item;
 
 import cofh.thermal.dynamics.api.grid.IDuct;
 import cofh.thermal.dynamics.api.helper.GridHelper;
-import cofh.thermal.dynamics.common.attachment.ItemServoAttachment;
+import cofh.thermal.dynamics.common.attachment.ItemFilterAttachment;
 import cofh.thermal.dynamics.common.block.entity.duct.DuctBlockEntity;
 import cofh.thermal.dynamics.common.block.entity.duct.ItemDuctBlockEntity;
 import cofh.thermal.dynamics.common.grid.Grid;
@@ -11,6 +11,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.capabilities.Capabilities;
@@ -22,6 +23,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +39,12 @@ public class ItemGrid extends Grid<ItemGrid, ItemGridNode> {
     private boolean attachmentNodesDirty = true;
     private final Set<ItemDuctBlockEntity> activeDucts = new LinkedHashSet<>();
     private final Set<ItemDuctBlockEntity> dirtyDucts = new LinkedHashSet<>();
+    private final Map<BlockPos, Search> searchCache = new HashMap<>();
+    /** In-flight capacity reservations indexed by external target position (loaded ducts only). */
+    private final Map<BlockPos, List<TravelingItem>> reservations = new HashMap<>();
+    private List<ItemDuctBlockEntity> activeSnapshot = List.of();
+    private boolean activeDirty = true;
+    private int waitingItems;
 
     public ItemGrid(UUID id, Level world) {
 
@@ -60,15 +68,28 @@ public class ItemGrid extends Grid<ItemGrid, ItemGridNode> {
                 node.attachmentTick();
             }
         }
-        for (ItemDuctBlockEntity duct : List.copyOf(activeDucts)) {
+        if (activeDirty) {
+            activeSnapshot = List.copyOf(activeDucts);
+            activeDirty = false;
+        }
+        for (ItemDuctBlockEntity duct : activeSnapshot) {
             if (duct.isRemoved() || duct.getGrid() != this || !duct.hasTravelingItems()) {
-                activeDucts.remove(duct);
+                if (activeDucts.remove(duct)) {
+                    activeDirty = true;
+                    // Unloaded/foreign ducts keep their items but stop reserving capacity here;
+                    // re-tracking on load rebuilds their reservations.
+                    for (TravelingItem item : duct.getTravelingItems()) {
+                        removeReservation(item);
+                    }
+                }
                 continue;
             }
             duct.serverTick();
         }
         for (ItemDuctBlockEntity duct : dirtyDucts) {
-            duct.syncTravelingItems();
+            if (!duct.isRemoved() && duct.getGrid() == this) {
+                duct.syncTravelingItems();
+            }
         }
         dirtyDucts.clear();
     }
@@ -77,6 +98,7 @@ public class ItemGrid extends Grid<ItemGrid, ItemGridNode> {
     public void onModified() {
 
         attachmentNodesDirty = true;
+        searchCache.clear();
         super.onModified();
     }
 
@@ -84,12 +106,14 @@ public class ItemGrid extends Grid<ItemGrid, ItemGridNode> {
     public void onAttachmentsChanged() {
 
         attachmentNodesDirty = true;
+        searchCache.clear();
     }
 
     @Override
     public void onMerge(ItemGrid from) {
 
         scanTrackedDucts();
+        recountWaitingItems();
     }
 
     @Override
@@ -97,8 +121,77 @@ public class ItemGrid extends Grid<ItemGrid, ItemGridNode> {
 
         for (ItemGrid grid : others) {
             grid.scanTrackedDucts();
+            grid.recountWaitingItems();
         }
     }
+
+    public boolean hasWaitingItems() {
+
+        return waitingItems > 0;
+    }
+
+    public void setItemWaiting(boolean waiting, boolean wasWaiting) {
+
+        waitingItems = Math.max(0, waitingItems + (waiting ? 1 : 0) - (wasWaiting ? 1 : 0));
+    }
+
+    public void recountWaitingItems() {
+
+        int count = 0;
+        for (ItemDuctBlockEntity duct : activeDucts) {
+            if (duct.isRemoved() || duct.getGrid() != this) continue;
+            for (TravelingItem item : duct.getTravelingItems()) {
+                if (item.waiting()) ++count;
+            }
+        }
+        waitingItems = count;
+        rebuildReservations();
+    }
+
+    // region RESERVATION INDEX
+    public void addReservation(TravelingItem item) {
+
+        BlockPos target = item.updateReservedTarget();
+        if (target != null) {
+            reservations.computeIfAbsent(target, k -> new ArrayList<>(4)).add(item);
+        }
+    }
+
+    public void removeReservation(TravelingItem item) {
+
+        BlockPos target = item.reservedTarget();
+        if (target == null) {
+            return;
+        }
+        List<TravelingItem> list = reservations.get(target);
+        if (list != null && list.remove(item) && list.isEmpty()) {
+            reservations.remove(target);
+        }
+        item.clearReservedTarget();
+    }
+
+    public void updateReservation(TravelingItem item) {
+
+        removeReservation(item);
+        addReservation(item);
+    }
+
+    private void rebuildReservations() {
+
+        for (List<TravelingItem> list : reservations.values()) {
+            for (TravelingItem item : list) {
+                item.clearReservedTarget();
+            }
+        }
+        reservations.clear();
+        for (ItemDuctBlockEntity duct : activeDucts) {
+            if (duct.isRemoved() || duct.getGrid() != this) continue;
+            for (TravelingItem item : duct.getTravelingItems()) {
+                addReservation(item);
+            }
+        }
+    }
+    // endregion
 
     @Override
     public boolean canConnectOnSide(BlockEntity tile, @Nullable Direction dir) {
@@ -111,24 +204,12 @@ public class ItemGrid extends Grid<ItemGrid, ItemGridNode> {
         return handler != null && handler.getSlots() > 0;
     }
 
-    @Override
-    public void refreshCapabilities() {
-
-        for (var entry : getNodes().entrySet()) {
-            if (!entry.getValue().isLoaded()) {
-                continue;
-            }
-            if (getLevel().getBlockEntity(entry.getKey()) instanceof DuctBlockEntity<?, ?> duct) {
-                duct.invalidateAttachments();
-            }
-            getLevel().invalidateCapabilities(entry.getKey());
-        }
-    }
-
     public void track(ItemDuctBlockEntity duct) {
 
         if (duct.getGrid() == this && duct.hasTravelingItems()) {
-            activeDucts.add(duct);
+            if (activeDucts.add(duct)) {
+                activeDirty = true;
+            }
         }
     }
 
@@ -138,12 +219,13 @@ public class ItemGrid extends Grid<ItemGrid, ItemGridNode> {
         dirtyDucts.add(duct);
     }
 
-    public ItemRoute findRoute(BlockPos start, @Nullable Direction excludedStartSide, net.minecraft.world.item.ItemStack stack,
+    public ItemRoute findRoute(BlockPos start, @Nullable Set<BlockPos> excludedTargets, net.minecraft.world.item.ItemStack stack,
             @Nullable BlockPos preferredDestination, @Nullable Direction preferredSide) {
 
         Search search = search(start);
         if (preferredDestination != null && preferredSide != null && search.parents.containsKey(preferredDestination) &&
-                canInsert(preferredDestination, preferredSide, stack)) {
+                !containsTarget(excludedTargets, preferredDestination.relative(preferredSide)) &&
+                canInsert(preferredDestination, preferredSide, stack, excludedTargets)) {
             return buildRoute(start, preferredDestination, preferredSide, search.parents);
         }
         for (BlockPos position : search.order) {
@@ -152,10 +234,7 @@ public class ItemGrid extends Grid<ItemGrid, ItemGridNode> {
                 continue;
             }
             for (Direction side : DIRECTIONS) {
-                if (position.equals(start) && side == excludedStartSide) {
-                    continue;
-                }
-                if (canInsert(position, side, stack)) {
+                if (canInsert(position, side, stack, excludedTargets)) {
                     return buildRoute(start, position, side, search.parents);
                 }
             }
@@ -174,6 +253,10 @@ public class ItemGrid extends Grid<ItemGrid, ItemGridNode> {
 
     private Search search(BlockPos start) {
 
+        Search cached = searchCache.get(start);
+        if (cached != null) {
+            return cached;
+        }
         Map<BlockPos, Step> parents = new HashMap<>();
         List<BlockPos> order = new ArrayList<>();
         ArrayDeque<BlockPos> queue = new ArrayDeque<>();
@@ -195,7 +278,9 @@ public class ItemGrid extends Grid<ItemGrid, ItemGridNode> {
                 queue.addLast(adjacent);
             }
         }
-        return new Search(parents, order);
+        Search result = new Search(Collections.unmodifiableMap(new HashMap<>(parents)), List.copyOf(order));
+        searchCache.put(start.immutable(), result);
+        return result;
     }
 
     private ItemRoute buildRoute(BlockPos start, BlockPos destination, Direction side, Map<BlockPos, Step> parents) {
@@ -214,25 +299,88 @@ public class ItemGrid extends Grid<ItemGrid, ItemGridNode> {
         return new ItemRoute(steps, destination, side);
     }
 
-    private boolean canInsert(BlockPos position, Direction side, net.minecraft.world.item.ItemStack stack) {
+    /**
+     * Returns the amount of {@code stack} that the route's endpoint can accept right now.
+     * The simulation is intentionally performed against the live handler: endpoint capacity can change
+     * independently of the topology/BFS cache.
+     */
+    public int getInsertCapacity(@Nullable ItemRoute route, ItemStack stack) {
+
+        return getInsertCapacity(route, stack, 0);
+    }
+
+    /**
+     * Returns the endpoint capacity after also accounting for reservations planned by the current
+     * simulation call but not yet represented by a real {@link TravelingItem}.
+     */
+    public int getInsertCapacity(@Nullable ItemRoute route, ItemStack stack, int additionalReserved) {
+
+        if (route == null || stack.isEmpty()) {
+            return 0;
+        }
+        ItemDuctBlockEntity duct = getItemDuct(route.destination());
+        return duct == null ? 0 : getInsertCapacity(duct, route.destinationSide(), stack, Math.max(0, additionalReserved));
+    }
+
+    private int getInsertCapacity(ItemDuctBlockEntity duct, Direction side, ItemStack stack, int additionalReserved) {
+
+        if (duct.getConnectionType(side) == IDuct.ConnectionType.DISABLED ||
+                duct.getAttachment(side) instanceof ItemFilterAttachment) {
+            return 0;
+        }
+        BlockPos target = duct.getBlockPos().relative(side);
+        if (GridHelper.getGridHost(getLevel(), target) != null) {
+            return 0;
+        }
+        IItemHandler handler = duct.getCachedExternalItemHandler(side);
+        if (handler == null || handler.getSlots() <= 0) {
+            return 0;
+        }
+        VirtualItemHandler virtual = new VirtualItemHandler(handler);
+        List<TravelingItem> reserved = reservations.get(target);
+        if (reserved != null) {
+            for (TravelingItem item : reserved) {
+                if (!item.reservesTarget(target)) {
+                    continue; // stale index entry; harmless, cleaned up on the next rebuild
+                }
+                ItemStack remainder = ItemHandlerHelper.insertItemStacked(virtual, item.stack(), false);
+                if (!remainder.isEmpty()) {
+                    // An already travelling item could no longer fit after the target changed.
+                    // Do not compound the problem by accepting another item for this endpoint.
+                    return 0;
+                }
+            }
+        }
+        if (additionalReserved > 0) {
+            ItemStack reservedStack = stack.copyWithCount(additionalReserved);
+            if (!ItemHandlerHelper.insertItemStacked(virtual, reservedStack, false).isEmpty()) {
+                return 0;
+            }
+        }
+        ItemStack remainder = ItemHandlerHelper.insertItemStacked(virtual, stack, true);
+        return stack.getCount() - remainder.getCount();
+    }
+
+    private boolean canInsert(BlockPos position, Direction side, ItemStack stack, @Nullable Set<BlockPos> excludedTargets) {
 
         ItemDuctBlockEntity duct = getItemDuct(position);
         if (duct == null || duct.getConnectionType(side) == IDuct.ConnectionType.DISABLED ||
-                duct.getAttachment(side) instanceof ItemServoAttachment) {
+                duct.getAttachment(side) instanceof ItemFilterAttachment) {
             return false;
         }
         BlockPos target = position.relative(side);
+        if (containsTarget(excludedTargets, target)) {
+            return false;
+        }
         if (GridHelper.getGridHost(getLevel(), target) != null) {
             return false;
         }
-        BlockEntity targetTile = getLevel().getBlockEntity(target);
-        if (targetTile == null) {
-            return false;
-        }
-        IItemHandler handler = getLevel().getCapability(Capabilities.ItemHandler.BLOCK, target,
-                targetTile.getBlockState(), targetTile, side.getOpposite());
-        return handler != null && handler.getSlots() > 0 &&
-                ItemHandlerHelper.insertItemStacked(handler, stack, true).getCount() < stack.getCount();
+        return getInsertCapacity(duct, side, stack, 0) > 0;
+    }
+
+    private static boolean containsTarget(@Nullable Set<BlockPos> targets, BlockPos pos) {
+
+        return targets != null && targets.contains(pos);
     }
 
     private ItemDuctBlockEntity getItemDuct(BlockPos position) {
@@ -285,6 +433,95 @@ public class ItemGrid extends Grid<ItemGrid, ItemGridNode> {
 
     private record Search(Map<BlockPos, Step> parents, List<BlockPos> order) {
 
+    }
+
+    /**
+     * A slot-level simulation of an external item handler. The real handler is never mutated; this
+     * lets reservations for different item types occupy distinct empty slots during routing checks.
+     * Slots are copied lazily on first write access; reads pass through to the delegate.
+     */
+    private static final class VirtualItemHandler implements IItemHandler {
+
+        private final IItemHandler delegate;
+        private final ItemStack[] stacks;
+
+        private VirtualItemHandler(IItemHandler delegate) {
+
+            this.delegate = delegate;
+            this.stacks = new ItemStack[delegate.getSlots()];
+        }
+
+        private ItemStack localSlot(int slot) {
+
+            ItemStack local = stacks[slot];
+            if (local == null) {
+                local = delegate.getStackInSlot(slot).copy();
+                stacks[slot] = local;
+            }
+            return local;
+        }
+
+        @Override
+        public int getSlots() {
+
+            return stacks.length;
+        }
+
+        @Override
+        public ItemStack getStackInSlot(int slot) {
+
+            if (slot < 0 || slot >= stacks.length) {
+                return ItemStack.EMPTY;
+            }
+            ItemStack local = stacks[slot];
+            // Per the IItemHandler contract callers must not mutate the returned stack, so untouched
+            // slots pass the delegate's view through without copying.
+            return local != null ? local : delegate.getStackInSlot(slot);
+        }
+
+        @Override
+        public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
+
+            if (stack.isEmpty() || slot < 0 || slot >= stacks.length || !delegate.isItemValid(slot, stack)) {
+                return stack;
+            }
+            ItemStack existing = localSlot(slot);
+            if (!existing.isEmpty() && !ItemStack.isSameItemSameComponents(existing, stack)) {
+                return stack;
+            }
+            int limit = Math.min(getSlotLimit(slot), stack.getMaxStackSize());
+            int available = Math.max(0, limit - existing.getCount());
+            int accepted = Math.min(available, stack.getCount());
+            if (accepted <= 0) {
+                return stack;
+            }
+            if (!simulate) {
+                if (existing.isEmpty()) {
+                    stacks[slot] = stack.copyWithCount(accepted);
+                } else {
+                    existing.grow(accepted);
+                }
+            }
+            return stack.copyWithCount(stack.getCount() - accepted);
+        }
+
+        @Override
+        public ItemStack extractItem(int slot, int amount, boolean simulate) {
+
+            return ItemStack.EMPTY;
+        }
+
+        @Override
+        public int getSlotLimit(int slot) {
+
+            return slot >= 0 && slot < stacks.length ? delegate.getSlotLimit(slot) : 0;
+        }
+
+        @Override
+        public boolean isItemValid(int slot, ItemStack stack) {
+
+            return slot >= 0 && slot < stacks.length && delegate.isItemValid(slot, stack);
+        }
     }
 
 }

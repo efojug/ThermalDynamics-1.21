@@ -97,13 +97,11 @@ public class DuctBakedModel implements IDynamicBakedModel {
 
     private List<BakedQuad> getModelFor(DuctModelData modelData) {
 
-        // Model data is mutable, so never use the caller-owned instance as a concurrent cache key.
-        DuctModelData cacheKey = new DuctModelData(modelData);
         while (true) {
             CacheState state = cacheState;
             List<BakedQuad> modelQuads = DEBUG
-                    ? bakeModel(state, cacheKey, true, true)
-                    : state.modelCache.computeIfAbsent(cacheKey, key -> bakeModel(state, key, true, true));
+                    ? bakeModel(state, modelData, true, true)
+                    : state.modelCache.computeIfAbsent(modelData, key -> bakeModel(state, key, true, true));
             if (state == cacheState) {
                 return modelQuads;
             }
@@ -112,12 +110,11 @@ public class DuctBakedModel implements IDynamicBakedModel {
 
     private List<BakedQuad> getShellModelFor(DuctModelData modelData) {
 
-        DuctModelData cacheKey = new DuctModelData(modelData);
         while (true) {
             CacheState state = cacheState;
             List<BakedQuad> modelQuads = DEBUG
-                    ? bakeModel(state, cacheKey, true, false)
-                    : state.shellCache.computeIfAbsent(cacheKey, key -> bakeModel(state, key, true, false));
+                    ? bakeModel(state, modelData, true, false)
+                    : state.shellCache.computeIfAbsent(modelData, key -> bakeModel(state, key, true, false));
             if (state == cacheState) {
                 return modelQuads;
             }
@@ -126,12 +123,11 @@ public class DuctBakedModel implements IDynamicBakedModel {
 
     private List<BakedQuad> getFillModelFor(DuctModelData modelData) {
 
-        DuctModelData cacheKey = new DuctModelData(modelData);
         while (true) {
             CacheState state = cacheState;
             List<BakedQuad> modelQuads = DEBUG
-                    ? bakeModel(state, cacheKey, false, true)
-                    : state.fillModelCache.computeIfAbsent(cacheKey, key -> bakeModel(state, key, false, true));
+                    ? bakeModel(state, modelData, false, true)
+                    : state.fillModelCache.computeIfAbsent(modelData, key -> bakeModel(state, key, false, true));
             if (state == cacheState) {
                 return modelQuads;
             }

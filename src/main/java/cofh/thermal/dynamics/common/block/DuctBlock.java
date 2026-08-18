@@ -126,7 +126,7 @@ public class DuctBlock extends Block implements EntityBlock, SimpleWaterloggedBl
                     .clip(RayTracer.getStartVec(player), RayTracer.getEndVec(player), pos);
             if (advHit != null) {
                 boolean attachmentTool = Utils.isWrench(heldStack) || heldStack.getItem() instanceof RedprintItem;
-                if (!attachmentTool && advHit.subHit >= 7 && duct.getAttachment(DIRECTIONS[advHit.subHit - 7]) != EmptyAttachment.INSTANCE) {
+                if (heldStack.isEmpty() && advHit.subHit >= 7 && duct.getAttachment(DIRECTIONS[advHit.subHit - 7]) != EmptyAttachment.INSTANCE) {
                     if (Utils.isClientWorld(worldIn)) {
                         return ItemInteractionResult.SUCCESS;
                     }
@@ -153,6 +153,15 @@ public class DuctBlock extends Block implements EntityBlock, SimpleWaterloggedBl
                             return ItemInteractionResult.SUCCESS;
                         }
                     }
+                } else if (advHit.subHit >= 7 && duct.getAttachment(DIRECTIONS[advHit.subHit - 7]) != EmptyAttachment.INSTANCE) {
+                    // An installed attachment owns interaction on its face. This must run before
+                    // default block/item interaction so holding a block or another item cannot
+                    // place/use it instead of opening the attachment.
+                    if (Utils.isClientWorld(worldIn)) {
+                        return ItemInteractionResult.SUCCESS;
+                    }
+                    duct.openAttachmentGui(DIRECTIONS[advHit.subHit - 7], player);
+                    return ItemInteractionResult.SUCCESS;
                 } else if (heldStack.isEmpty()) {
                     if (Utils.isClientWorld(worldIn)) {
                         return ItemInteractionResult.SUCCESS;
@@ -171,13 +180,15 @@ public class DuctBlock extends Block implements EntityBlock, SimpleWaterloggedBl
                     if (Utils.isClientWorld(worldIn)) {
                         return ItemInteractionResult.SUCCESS;
                     }
-                    if (advHit.subHit >= 7) {
-                        if (duct.attemptAttachmentInstall(DIRECTIONS[advHit.subHit - 7], player, attachmentItem.getAttachmentType(heldStack))) {
+                    Direction installSide = advHit.subHit == 0 ? advHit.getDirection()
+                            : advHit.subHit >= 7 ? DIRECTIONS[advHit.subHit - 7] : null;
+                    if (installSide != null) {
+                        if (duct.attemptAttachmentInstall(installSide, player, attachmentItem.getAttachmentType(heldStack))) {
                             if (!player.getAbilities().instabuild) {
                                 player.setItemInHand(handIn, consumeItem(heldStack, 1));
                             }
                         } else {
-                            duct.openAttachmentGui(DIRECTIONS[advHit.subHit - 7], player);
+                            duct.openAttachmentGui(installSide, player);
                         }
                         return ItemInteractionResult.SUCCESS;
                     }

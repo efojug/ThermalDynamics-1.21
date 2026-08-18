@@ -5,13 +5,12 @@ import cofh.core.common.config.ConfigManager;
 import cofh.thermal.dynamics.api.TDynApi;
 import cofh.thermal.dynamics.api.grid.IGridType;
 import cofh.thermal.dynamics.client.DebugRenderer;
+import cofh.thermal.dynamics.client.ClientTravelingItemIndex;
 import cofh.thermal.dynamics.client.gui.ItemBufferScreen;
 import cofh.thermal.dynamics.client.gui.attachment.EnergyLimiterAttachmentScreen;
-import cofh.thermal.dynamics.client.gui.attachment.FluidFilterAttachmentScreen;
 import cofh.thermal.dynamics.client.gui.attachment.FluidServoAttachmentScreen;
 import cofh.thermal.dynamics.client.gui.attachment.FluidTurboServoAttachmentScreen;
 import cofh.thermal.dynamics.client.gui.attachment.ItemServoAttachmentScreen;
-import cofh.thermal.dynamics.client.gui.attachment.ItemTurboServoAttachmentScreen;
 import cofh.thermal.dynamics.common.block.entity.ItemBufferBlockEntity;
 import cofh.thermal.dynamics.common.block.entity.duct.DuctBlockEntity;
 import cofh.thermal.dynamics.common.config.TDynConfig;
@@ -28,6 +27,8 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.ModList;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.capabilities.BlockCapability;
@@ -90,6 +91,9 @@ public class ThermalDynamics {
         TDynBlockEntities.register();
 
         GridEvents.register();
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            ClientTravelingItemIndex.register();
+        }
     }
 
     private void setFeatureFlags() {
@@ -146,11 +150,9 @@ public class ThermalDynamics {
         event.register(ITEM_BUFFER_CONTAINER.get(), ItemBufferScreen::new);
 
         event.register(ENERGY_LIMITER_ATTACHMENT_CONTAINER.get(), EnergyLimiterAttachmentScreen::new);
-        event.register(FLUID_FILTER_ATTACHMENT_CONTAINER.get(), FluidFilterAttachmentScreen::new);
         event.register(FLUID_SERVO_ATTACHMENT_CONTAINER.get(), FluidServoAttachmentScreen::new);
         event.register(FLUID_TURBO_SERVO_ATTACHMENT_CONTAINER.get(), FluidTurboServoAttachmentScreen::new);
         event.register(ITEM_SERVO_ATTACHMENT_CONTAINER.get(), ItemServoAttachmentScreen::new);
-        event.register(ITEM_TURBO_SERVO_ATTACHMENT_CONTAINER.get(), ItemTurboServoAttachmentScreen::new);
         if (mekanismLoaded) {
             cofh.thermal.dynamics.compat.mekanism.client.MekanismClientCompat.registerMenuScreens(event);
         }
