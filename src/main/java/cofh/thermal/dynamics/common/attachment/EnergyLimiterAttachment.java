@@ -3,6 +3,7 @@ package cofh.thermal.dynamics.common.attachment;
 import cofh.lib.api.IConveyableData;
 import cofh.lib.util.helpers.MathHelper;
 import cofh.thermal.dynamics.api.grid.IDuct;
+import cofh.thermal.dynamics.common.block.entity.duct.EnergyDuctBlockEntity;
 import cofh.thermal.dynamics.common.inventory.attachment.EnergyLimiterAttachmentMenu;
 import cofh.thermal.dynamics.common.network.packet.server.AttachmentConfigPacket;
 import net.minecraft.core.Direction;
@@ -28,10 +29,13 @@ import static cofh.thermal.dynamics.client.TDynTextures.ENERGY_LIMITER_ATTACHMEN
 import static cofh.thermal.dynamics.client.TDynTextures.ENERGY_LIMITER_ATTACHMENT_LOC;
 import static cofh.thermal.dynamics.init.registries.TDynIDs.ENERGY_LIMITER;
 import static cofh.thermal.dynamics.init.registries.TDynIDs.ID_ENERGY_LIMITER_ATTACHMENT;
+import static cofh.thermal.dynamics.init.registries.TDynGrids.ENERGY_GRID;
 
 public class EnergyLimiterAttachment implements IAttachment, IRedstoneControllableAttachment, IConveyableData, MenuProvider {
 
-    public static final IAttachmentFactory<IAttachment> FACTORY = (nbt, duct, side) -> new EnergyLimiterAttachment(duct, side).read(nbt);
+    public static final IAttachmentFactory<IAttachment> FACTORY = (nbt, duct, side) -> duct instanceof EnergyDuctBlockEntity || duct.getGridType() == ENERGY_GRID.get()
+            ? new EnergyLimiterAttachment(duct, side).read(nbt)
+            : EmptyAttachment.INSTANCE;
 
     public static final Component DISPLAY_NAME = Component.translatable("attachment.thermal.energy_limiter");
 
