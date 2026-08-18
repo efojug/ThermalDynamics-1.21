@@ -16,6 +16,8 @@ public class TDynIDs {
     public static final String ID_ENERGY_DUCT = "energy_duct";
     public static final String ID_FLUID_DUCT = "fluid_duct";
     public static final String ID_FLUID_DUCT_WINDOWED = "fluid_duct_windowed";
+    public static final String ID_CHEMICAL_DUCT = "chemical_duct";
+    public static final String ID_ITEM_DUCT = "item_duct";
 
     public static final String ID_ENERGY_DISTRIBUTOR = "energy_distributor";
 
@@ -31,6 +33,8 @@ public class TDynIDs {
     public static final String ID_FLUID_FILTER_ATTACHMENT = "fluid_filter_attachment";
     public static final String ID_FLUID_SERVO_ATTACHMENT = "fluid_servo_attachment";
     public static final String ID_FLUID_TURBO_SERVO_ATTACHMENT = "fluid_turbo_servo_attachment";
+    public static final String ID_ITEM_SERVO_ATTACHMENT = "item_servo_attachment";
+    public static final String ID_ITEM_TURBO_SERVO_ATTACHMENT = "item_turbo_servo_attachment";
 
     public static final String ENERGY_LIMITER = "energy_limiter";
     public static final String FILTER = "filter";

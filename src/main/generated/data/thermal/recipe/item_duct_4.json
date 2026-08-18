@@ -1,0 +1,24 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "building",
+  "key": {
+    "G": {
+      "tag": "thermal:glass/hardened"
+    },
+    "S": {
+      "tag": "c:ingots/signalum"
+    },
+    "T": {
+      "tag": "c:ingots/tin"
+    }
+  },
+  "pattern": [
+    "TST",
+    "TGT",
+    "TST"
+  ],
+  "result": {
+    "count": 4,
+    "id": "thermal:item_duct"
+  }
+}

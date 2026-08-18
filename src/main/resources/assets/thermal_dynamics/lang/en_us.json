@@ -4,13 +4,15 @@
   "_comment": "========================================================================================================",
 
   "attachment.thermal.energy_limiter": "Redstone Flux Limiter",
-  "attachment.thermal.filter": "Fluiduct Filter",
-  "attachment.thermal.servo": "Fluiduct Servo",
-  "attachment.thermal.turbo_servo": "Fluiduct Turbo-Servo",
+  "attachment.thermal.filter": "Filter",
+  "attachment.thermal.servo": "Servo",
+  "attachment.thermal.turbo_servo": "Turbo Servo",
 
   "block.thermal.energy_duct": "Fluxduct",
   "block.thermal.fluid_duct": "Fluiduct",
   "block.thermal.fluid_duct_windowed": "Fluiduct (Windowed)",
+  "block.thermal.item_duct": "Item Duct",
+  "block.thermal.chemical_duct": "Chemical Duct",
 
   "block.thermal.energy_distributor": "RF Distribution Interface",
   "block.thermal.fluid_distributor": "Fluid Distribution Interface",
@@ -41,6 +43,13 @@
   "info.thermal.fluid_turbo_servo_attachment.2": "Additional options can be used to fine-tune filtering and extraction amount.",
   "info.thermal.fluid_turbo_servo_attachment.3": "Redstone Control is used to enable extraction.",
 
+  "info.thermal.item_filter_attachment.0": "Moves up to 1024 filtered items every tick.",
+  "info.thermal.item_filter_attachment.1": "Redstone Control is used to enable extraction.",
+  "info.thermal.chemical_servo_attachment.0": "Drag Chemicals from JEI into the filter slots.",
+  "info.thermal.chemical_servo_attachment.1": "Redstone Control is used to enable extraction.",
+  "info.thermal.chemical_turbo_servo_attachment.0": "Transfers filtered Chemicals without an artificial transfer ceiling.",
+  "info.thermal.chemical_turbo_servo_attachment.1": "Drag a Chemical from JEI into the filter slot.",
+
   "info.thermal.item_buffer.0": "Restricts quantity and flow of items.",
   "info.thermal.item_buffer.1": "Set desired items and quantities using the left grid.",
   "info.thermal.item_buffer.2": "Mouse wheel can be used to fine-tune item quantity.",
@@ -61,6 +70,8 @@
 
   "block.thermal.energy_duct.keyword": "energy rf transfer",
   "block.thermal.fluid_duct.keyword": "energy rf transfer",
+  "block.thermal.item_duct.keyword": "item inventory transport",
+  "block.thermal.chemical_duct.keyword": "mekanism chemical gas slurry pigment infusion",
 
   "block.thermal.energy_distributor.keyword": "energy rf transfer",
   "block.thermal.fluid_distributor.keyword": "fluid transfer",

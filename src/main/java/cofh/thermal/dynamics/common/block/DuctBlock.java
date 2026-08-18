@@ -10,6 +10,7 @@ import cofh.lib.util.raytracer.VoxelShapeBlockHitResult;
 import cofh.thermal.core.common.item.RedprintItem;
 import cofh.thermal.dynamics.api.grid.IDuct;
 import cofh.thermal.dynamics.api.grid.IGridContainer;
+import cofh.thermal.dynamics.common.attachment.EmptyAttachment;
 import cofh.thermal.dynamics.common.block.entity.duct.DuctBlockEntity;
 import cofh.thermal.dynamics.common.item.AttachmentItem;
 import com.google.common.collect.ImmutableSet;
@@ -26,7 +27,6 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.BlockGetter;
-import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.block.Block;
@@ -85,7 +85,7 @@ public class DuctBlock extends Block implements EntityBlock, SimpleWaterloggedBl
         this.registerDefaultState(this.stateDefinition.any().setValue(WATERLOGGED, false));
     }
 
-    private static VoxelShape getConnectionShape(int connectionState) {
+    private static MultiIndexedVoxelShape getConnectionShape(int connectionState) {
 
         if (SHAPE_CACHE.containsKey(connectionState)) {
             return SHAPE_CACHE.get(connectionState);
@@ -122,9 +122,17 @@ public class DuctBlock extends Block implements EntityBlock, SimpleWaterloggedBl
 
         if (worldIn.getBlockEntity(pos) instanceof DuctBlockEntity<?, ?> duct) {
             duct.calcDuctModelDataServer();
-            HitResult rawHit = RayTracer.retrace(player, ClipContext.Fluid.NONE);
-            if (rawHit instanceof VoxelShapeBlockHitResult advHit) {
-                if (Utils.isWrench(heldStack)) {
+            VoxelShapeBlockHitResult advHit = getConnectionShape(duct.getDuctModelData().getConnectionState())
+                    .clip(RayTracer.getStartVec(player), RayTracer.getEndVec(player), pos);
+            if (advHit != null) {
+                boolean attachmentTool = Utils.isWrench(heldStack) || heldStack.getItem() instanceof RedprintItem;
+                if (!attachmentTool && advHit.subHit >= 7 && duct.getAttachment(DIRECTIONS[advHit.subHit - 7]) != EmptyAttachment.INSTANCE) {
+                    if (Utils.isClientWorld(worldIn)) {
+                        return ItemInteractionResult.SUCCESS;
+                    }
+                    duct.openAttachmentGui(DIRECTIONS[advHit.subHit - 7], player);
+                    return ItemInteractionResult.SUCCESS;
+                } else if (Utils.isWrench(heldStack)) {
                     if (Utils.isClientWorld(worldIn)) {
                         return ItemInteractionResult.SUCCESS;
                     }
@@ -141,7 +149,7 @@ public class DuctBlock extends Block implements EntityBlock, SimpleWaterloggedBl
                         return ItemInteractionResult.SUCCESS;
                     }
                     if (advHit.subHit >= 7) {
-                        if (duct.attachmentRedprintInteraction(heldStack, DIRECTIONS[advHit.subHit - 7], player)) {
+                        if (duct.attachmentRedprintInteraction(heldStack, DIRECTIONS[advHit.subHit - 7], player, player.isSecondaryUseActive())) {
                             return ItemInteractionResult.SUCCESS;
                         }
                     }
@@ -163,16 +171,7 @@ public class DuctBlock extends Block implements EntityBlock, SimpleWaterloggedBl
                     if (Utils.isClientWorld(worldIn)) {
                         return ItemInteractionResult.SUCCESS;
                     }
-                    if (advHit.subHit == 0) {
-                        if (duct.attemptAttachmentInstall(advHit.getDirection(), player, attachmentItem.getAttachmentType(heldStack))) {
-                            if (!player.getAbilities().instabuild) {
-                                player.setItemInHand(handIn, consumeItem(heldStack, 1));
-                            }
-                        } else {
-                            duct.openDuctGui(player);
-                        }
-                        return ItemInteractionResult.SUCCESS;
-                    } else if (advHit.subHit >= 7) {
+                    if (advHit.subHit >= 7) {
                         if (duct.attemptAttachmentInstall(DIRECTIONS[advHit.subHit - 7], player, attachmentItem.getAttachmentType(heldStack))) {
                             if (!player.getAbilities().instabuild) {
                                 player.setItemInHand(handIn, consumeItem(heldStack, 1));

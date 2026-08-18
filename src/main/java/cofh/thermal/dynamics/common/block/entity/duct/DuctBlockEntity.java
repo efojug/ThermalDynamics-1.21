@@ -152,7 +152,7 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
 
         ItemStack offhand = player.getItemInHand(InteractionHand.OFF_HAND);
         if (offhand.has(DataComponents.CUSTOM_DATA) && offhand.getItem() instanceof RedprintItem) {
-            attachmentRedprintInteraction(offhand, side, player);
+            attachmentRedprintInteraction(offhand, side, player, false);
         }
         setChanged();
         callNeighborStateChange();
@@ -165,6 +165,9 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
 
     public boolean attemptAttachmentRemove(Direction side, Player player) {
 
+        if (attachments[side.ordinal()] instanceof ItemServoAttachment servo) {
+            servo.dropStuffedItems();
+        }
         ItemStack attachmentItem = attachments[side.ordinal()].getItem();
         if (!attachmentItem.isEmpty()) {
             if (player == null || !player.addItem(attachmentItem)) {
@@ -185,10 +188,10 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
         return false;
     }
 
-    public boolean attachmentRedprintInteraction(ItemStack stack, Direction side, Player player) {
+    public boolean attachmentRedprintInteraction(ItemStack stack, Direction side, Player player, boolean copy) {
 
         if (side != null && attachments[side.ordinal()] instanceof IConveyableData conveyableData) {
-            if (!stack.has(DataComponents.CUSTOM_DATA)) {
+            if (copy) {
                 CompoundTag tag = new CompoundTag();
                 conveyableData.writeConveyableData(player, tag);
                 if (tag.isEmpty()) {
@@ -198,9 +201,11 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
                 player.level().playSound(null, player.blockPosition(), SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.PLAYERS, 0.5F, 0.7F);
                 return true;
             }
-            conveyableData.readConveyableData(player, stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag());
-            player.level().playSound(null, player.blockPosition(), SoundEvents.UI_BUTTON_CLICK.value(), SoundSource.PLAYERS, 0.5F, 0.8F);
-            return true;
+            if (stack.has(DataComponents.CUSTOM_DATA)) {
+                conveyableData.readConveyableData(player, stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag());
+                player.level().playSound(null, player.blockPosition(), SoundEvents.UI_BUTTON_CLICK.value(), SoundSource.PLAYERS, 0.5F, 0.8F);
+                return true;
+            }
         }
         return false;
     }
@@ -226,6 +231,9 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
     public void dropAttachments() {
 
         for (Direction dir : DIRECTIONS) {
+            if (attachments[dir.ordinal()] instanceof ItemServoAttachment servo) {
+                servo.dropStuffedItems();
+            }
             ItemStack attachmentItem = attachments[dir.ordinal()].getItem();
             if (!attachmentItem.isEmpty()) {
                 Utils.dropDismantleStackIntoWorld(attachmentItem, level, worldPosition);
@@ -241,6 +249,9 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
     public void dismantleAttachments(Player player, boolean returnDrops) {
 
         for (Direction dir : DIRECTIONS) {
+            if (attachments[dir.ordinal()] instanceof ItemServoAttachment servo) {
+                servo.dropStuffedItems();
+            }
             ItemStack attachmentItem = attachments[dir.ordinal()].getItem();
             if (!attachmentItem.isEmpty()) {
                 if (!returnDrops || player == null || !player.addItem(attachmentItem)) {
@@ -268,7 +279,7 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
             if (getGrid().isConnectedTo(worldPosition, worldPosition.relative(dir))) {
                 modelData.setInternalConnection(dir, true);
             }
-            if (connections[dir.ordinal()] == FORCED) {
+            if (canConnectToBlock(dir) || connections[dir.ordinal()] == FORCED) {
                 modelData.setExternalConnection(dir, true);
             }
         }
@@ -430,7 +441,7 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
         for (int i = 0; i < 6; ++i) {
             if (tag.contains(TAG_ATTACHMENT + i)) {
                 CompoundTag attachmentTag = tag.getCompound(TAG_ATTACHMENT + i);
-                attachments[i] = AttachmentRegistry.getAttachment(attachmentTag.getString(TAG_TYPE), attachmentTag, this, DIRECTIONS[i]);
+                attachments[i] = AttachmentRegistry.getAttachment(attachmentTag.getString(TAG_TYPE), attachmentTag, this, DIRECTIONS[i], provider);
             } else {
                 attachments[i] = EmptyAttachment.INSTANCE;
             }
@@ -456,7 +467,7 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
 
         for (int i = 0; i < 6; ++i) {
             CompoundTag attachmentTag = new CompoundTag();
-            attachments[i].write(attachmentTag);
+            attachments[i].write(attachmentTag, provider);
             if (!attachmentTag.isEmpty()) {
                 tag.put(TAG_ATTACHMENT + i, attachmentTag);
             }

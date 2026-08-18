@@ -1,6 +1,7 @@
 package cofh.thermal.dynamics;
 
 import cofh.lib.util.DeferredRegisterCoFH;
+import cofh.core.common.config.ConfigManager;
 import cofh.thermal.dynamics.api.TDynApi;
 import cofh.thermal.dynamics.api.grid.IGridType;
 import cofh.thermal.dynamics.client.DebugRenderer;
@@ -9,8 +10,11 @@ import cofh.thermal.dynamics.client.gui.attachment.EnergyLimiterAttachmentScreen
 import cofh.thermal.dynamics.client.gui.attachment.FluidFilterAttachmentScreen;
 import cofh.thermal.dynamics.client.gui.attachment.FluidServoAttachmentScreen;
 import cofh.thermal.dynamics.client.gui.attachment.FluidTurboServoAttachmentScreen;
+import cofh.thermal.dynamics.client.gui.attachment.ItemServoAttachmentScreen;
+import cofh.thermal.dynamics.client.gui.attachment.ItemTurboServoAttachmentScreen;
 import cofh.thermal.dynamics.common.block.entity.ItemBufferBlockEntity;
 import cofh.thermal.dynamics.common.block.entity.duct.DuctBlockEntity;
+import cofh.thermal.dynamics.common.config.TDynConfig;
 import cofh.thermal.dynamics.common.event.GridEvents;
 import cofh.thermal.dynamics.common.network.PacketHandler;
 import cofh.thermal.dynamics.init.registries.*;
@@ -29,6 +33,7 @@ import net.neoforged.neoforge.capabilities.BlockCapability;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
+import net.neoforged.neoforge.registries.NewRegistryEvent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -47,6 +52,7 @@ import static net.covers1624.quack.util.SneakyUtils.unsafeCast;
 public class ThermalDynamics {
 
     public static final Logger LOG = LogManager.getLogger(ID_THERMAL_DYNAMICS);
+    public static final ConfigManager CONFIG_MANAGER = new ConfigManager();
 
     public static final ResourceLocation GRID_REGISTRY_LOC = ResourceLocation.fromNamespaceAndPath(ID_THERMAL_DYNAMICS, ID_GRID_TYPE);
     public static final DeferredRegisterCoFH<IGridType<?>> GRIDS = DeferredRegisterCoFH.create(GRID_REGISTRY_LOC, ID_THERMAL_DYNAMICS);
@@ -56,11 +62,13 @@ public class ThermalDynamics {
     public ThermalDynamics(ModContainer modContainer, IEventBus modEventBus) {
 
         setFeatureFlags();
+        CONFIG_MANAGER.register(modEventBus).addServerConfig(new TDynConfig());
 
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(this::clientSetup);
         modEventBus.addListener(this::menuScreenSetup);
         modEventBus.addListener(this::capSetup);
+        modEventBus.addListener(this::registrySetup);
 
         modEventBus.addListener(PacketHandler::registerNetworking);
 
@@ -89,6 +97,11 @@ public class ThermalDynamics {
 
     }
 
+    private void registrySetup(final NewRegistryEvent event) {
+
+        CONFIG_MANAGER.setupServer();
+    }
+
     private void clientSetup(final FMLClientSetupEvent event) {
 
                 event.enqueueWork(this::registerRenderLayers);
@@ -100,10 +113,11 @@ public class ThermalDynamics {
         event.registerBlockEntity(TDynApi.GRID_HOST_CAPABILITY, ENERGY_DUCT_BLOCK_ENTITY.get(), (tile, ctx) -> tile);
         event.registerBlockEntity(TDynApi.GRID_HOST_CAPABILITY, FLUID_DUCT_BLOCK_ENTITY.get(), (tile, ctx) -> tile);
         event.registerBlockEntity(TDynApi.GRID_HOST_CAPABILITY, FLUID_DUCT_WINDOWED_BLOCK_ENTITY.get(), (tile, ctx) -> tile);
-
+        event.registerBlockEntity(TDynApi.GRID_HOST_CAPABILITY, ITEM_DUCT_BLOCK_ENTITY.get(), (tile, ctx) -> tile);
         registerPassthroughCapability(event, Capabilities.EnergyStorage.BLOCK, unsafeCast(ENERGY_DUCT_BLOCK_ENTITY.get()));
         registerPassthroughCapability(event, Capabilities.FluidHandler.BLOCK, unsafeCast(FLUID_DUCT_BLOCK_ENTITY.get()));
         registerPassthroughCapability(event, Capabilities.FluidHandler.BLOCK, unsafeCast(FLUID_DUCT_WINDOWED_BLOCK_ENTITY.get()));
+        registerPassthroughCapability(event, Capabilities.ItemHandler.BLOCK, unsafeCast(ITEM_DUCT_BLOCK_ENTITY.get()));
 
         event.registerBlockEntity(Capabilities.ItemHandler.BLOCK, ITEM_BUFFER_BLOCK_ENTITY.get(), ItemBufferBlockEntity::getItemHandler);
     }
@@ -123,12 +137,13 @@ public class ThermalDynamics {
         event.register(FLUID_FILTER_ATTACHMENT_CONTAINER.get(), FluidFilterAttachmentScreen::new);
         event.register(FLUID_SERVO_ATTACHMENT_CONTAINER.get(), FluidServoAttachmentScreen::new);
         event.register(FLUID_TURBO_SERVO_ATTACHMENT_CONTAINER.get(), FluidTurboServoAttachmentScreen::new);
+        event.register(ITEM_SERVO_ATTACHMENT_CONTAINER.get(), ItemServoAttachmentScreen::new);
+        event.register(ITEM_TURBO_SERVO_ATTACHMENT_CONTAINER.get(), ItemTurboServoAttachmentScreen::new);
     }
 
     private void registerRenderLayers() {
 
         RenderType cutout = RenderType.cutout();
-
         // RenderTypeLookup.setRenderLayer(ENERGY_DISTRIBUTOR_BLOCK, cutout);
 
         // RenderTypeLookup.setRenderLayer(BLOCKS.get(ID_ENDER_TUNNEL), translucent);
@@ -139,6 +154,7 @@ public class ThermalDynamics {
         ItemBlockRenderTypes.setRenderLayer(BLOCKS.get(ID_ENERGY_DUCT), cutout);
         ItemBlockRenderTypes.setRenderLayer(BLOCKS.get(ID_FLUID_DUCT), cutout);
         ItemBlockRenderTypes.setRenderLayer(BLOCKS.get(ID_FLUID_DUCT_WINDOWED), cutout);
+        ItemBlockRenderTypes.setRenderLayer(BLOCKS.get(ID_ITEM_DUCT), cutout);
     }
     // endregion
 }

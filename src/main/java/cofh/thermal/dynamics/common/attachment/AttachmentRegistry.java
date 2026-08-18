@@ -1,20 +1,23 @@
 package cofh.thermal.dynamics.common.attachment;
 
 import cofh.thermal.dynamics.api.grid.IDuct;
+import cofh.thermal.dynamics.common.block.entity.duct.ItemDuctBlockEntity;
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import net.minecraft.core.Direction;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 
 import java.util.Map;
 
 import static cofh.thermal.dynamics.init.registries.TDynGrids.FLUID_GRID;
+import static cofh.thermal.dynamics.init.registries.TDynGrids.ITEM_GRID;
 import static cofh.thermal.dynamics.init.registries.TDynIDs.*;
 
 public class AttachmentRegistry {
 
     public static final IAttachmentFactory<IAttachment> FILTER_FACTORY = ((nbt, duct, side) -> {
-        if (duct.getGridType() == FLUID_GRID.get()) {
-            return new FluidFilterAttachment(duct, side).read(nbt);
+        if (duct instanceof ItemDuctBlockEntity || duct.getGridType() == ITEM_GRID.get()) {
+            return new ItemFilterAttachment(duct, side).read(nbt);
         }
         return EmptyAttachment.INSTANCE;
     });
@@ -53,8 +56,13 @@ public class AttachmentRegistry {
 
     public static IAttachment getAttachment(String type, CompoundTag nbt, IDuct<?, ?> duct, Direction side) {
 
+        return getAttachment(type, nbt, duct, side, null);
+    }
+
+    public static IAttachment getAttachment(String type, CompoundTag nbt, IDuct<?, ?> duct, Direction side, HolderLookup.Provider provider) {
+
         if (ATTACHMENT_FACTORY_MAP.containsKey(type)) {
-            return ATTACHMENT_FACTORY_MAP.get(type).createAttachment(nbt, duct, side);
+            return ATTACHMENT_FACTORY_MAP.get(type).createAttachment(nbt, duct, side, provider);
         }
         return EmptyAttachment.INSTANCE;
     }

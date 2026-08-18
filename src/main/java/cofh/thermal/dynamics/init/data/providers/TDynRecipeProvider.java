@@ -74,6 +74,16 @@ public class TDynRecipeProvider extends RecipeProviderCoFH {
                 .unlockedBy("has_bronze", has(ItemTagsCoFH.INGOTS_BRONZE))
                 .save(consumer, ID_THERMAL + ":fluid_duct_windowed_4");
 
+        ShapedRecipeBuilder.shaped(BUILDING_BLOCKS, reg.get(ID_ITEM_DUCT), 4)
+                .define('T', ItemTagsCoFH.INGOTS_TIN)
+                .define('S', ItemTagsCoFH.INGOTS_SIGNALUM)
+                .define('G', ThermalTags.Items.HARDENED_GLASS)
+                .pattern("TST")
+                .pattern("TGT")
+                .pattern("TST")
+                .unlockedBy("has_signalum", has(ItemTagsCoFH.INGOTS_SIGNALUM))
+                .save(consumer, ID_THERMAL + ":item_duct_4");
+
         ShapedRecipeBuilder.shaped(BUILDING_BLOCKS, reg.get(ID_ENERGY_LIMITER_ATTACHMENT), 2)
                 .define('G', Tags.Items.GLASS_BLOCKS)
                 .define('I', ItemTagsCoFH.INGOTS_ELECTRUM)

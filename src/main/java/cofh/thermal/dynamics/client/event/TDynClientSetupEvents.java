@@ -1,14 +1,17 @@
 package cofh.thermal.dynamics.client.event;
 
 import cofh.thermal.dynamics.client.model.DuctModel;
+import cofh.thermal.dynamics.client.renderer.ItemDuctRenderer;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ModelEvent.RegisterGeometryLoaders;
 import net.neoforged.neoforge.client.event.TextureAtlasStitchedEvent;
+import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 
 import static cofh.lib.util.constants.ModIds.ID_THERMAL_DYNAMICS;
+import static cofh.thermal.dynamics.init.registries.TDynBlockEntities.ITEM_DUCT_BLOCK_ENTITY;
 
 @EventBusSubscriber (value = Dist.CLIENT, modid = ID_THERMAL_DYNAMICS, bus = EventBusSubscriber.Bus.MOD)
 public class TDynClientSetupEvents {
@@ -54,6 +57,12 @@ public class TDynClientSetupEvents {
     public static void postStitch(TextureAtlasStitchedEvent event) {
 
         DuctModel.clearCaches();
+    }
+
+    @SubscribeEvent
+    public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
+
+        event.registerBlockEntityRenderer(ITEM_DUCT_BLOCK_ENTITY.get(), ItemDuctRenderer::new);
     }
 
 }

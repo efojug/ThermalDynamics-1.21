@@ -34,19 +34,29 @@ public interface IAttachment extends INBTSerializable<CompoundTag> {
 
     IAttachment read(CompoundTag nbt);
 
+    default IAttachment read(CompoundTag nbt, HolderLookup.Provider provider) {
+
+        return read(nbt);
+    }
+
     // Attachments MUST write their type to the NBT. Reading is optional.
     CompoundTag write(CompoundTag nbt);
+
+    default CompoundTag write(CompoundTag nbt, HolderLookup.Provider provider) {
+
+        return write(nbt);
+    }
 
     @Override
     default CompoundTag serializeNBT(HolderLookup.Provider provider) {
 
-        return write(new CompoundTag());
+        return write(new CompoundTag(), provider);
     }
 
     @Override
     default void deserializeNBT(HolderLookup.Provider provider, CompoundTag nbt) {
 
-        read(nbt);
+        read(nbt, provider);
     }
 
     default void tick() {

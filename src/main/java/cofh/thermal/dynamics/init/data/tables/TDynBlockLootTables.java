@@ -23,6 +23,7 @@ public class TDynBlockLootTables extends BlockLootSubProviderCoFH {
         createSimpleDropTable(regBlocks.get(ID_ENERGY_DUCT));
         createSimpleDropTable(regBlocks.get(ID_FLUID_DUCT));
         createSimpleDropTable(regBlocks.get(ID_FLUID_DUCT_WINDOWED));
+        createSimpleDropTable(regBlocks.get(ID_ITEM_DUCT));
 
         // createSyncDropTable(regBlocks.get(ID_ENERGY_DISTRIBUTOR));
 

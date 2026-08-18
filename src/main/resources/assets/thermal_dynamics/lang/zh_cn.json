@@ -1,0 +1,8 @@
+{
+  "attachment.thermal.filter": "过滤器",
+  "attachment.thermal.servo": "伺服器",
+  "attachment.thermal.turbo_servo": "涡轮伺服器",
+
+  "block.thermal.item_duct": "物品管道",
+  "block.thermal.chemical_duct": "化学品管道"
+}

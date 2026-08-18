@@ -2,6 +2,11 @@
   "values": [
     "thermal:energy_duct",
     "thermal:fluid_duct",
-    "thermal:fluid_duct_windowed"
+    "thermal:fluid_duct_windowed",
+    "thermal:item_duct",
+    {
+      "id": "thermal:chemical_duct",
+      "required": false
+    }
   ]
 }

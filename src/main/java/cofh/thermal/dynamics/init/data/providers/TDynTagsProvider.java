@@ -3,6 +3,7 @@ package cofh.thermal.dynamics.init.data.providers;
 import cofh.thermal.lib.util.references.ThermalTags;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.data.PackOutput;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.data.tags.ItemTagsProvider;
 import net.minecraft.data.tags.TagsProvider;
 import net.minecraft.tags.BlockTags;
@@ -29,16 +30,22 @@ public class TDynTagsProvider {
         @Override
         protected void addTags(HolderLookup.Provider pProvider) {
 
+            ResourceLocation chemicalDuct = ResourceLocation.fromNamespaceAndPath(ID_THERMAL, ID_CHEMICAL_DUCT);
+
             // region TILE BLOCKS
             tag(BlockTags.MINEABLE_WITH_PICKAXE).add(BLOCKS.get(ID_ENERGY_DUCT));
             tag(BlockTags.MINEABLE_WITH_PICKAXE).add(BLOCKS.get(ID_FLUID_DUCT));
             tag(BlockTags.MINEABLE_WITH_PICKAXE).add(BLOCKS.get(ID_FLUID_DUCT_WINDOWED));
+            tag(BlockTags.MINEABLE_WITH_PICKAXE).add(BLOCKS.get(ID_ITEM_DUCT));
+            tag(BlockTags.MINEABLE_WITH_PICKAXE).addOptional(chemicalDuct);
 
             tag(BlockTags.MINEABLE_WITH_AXE).add(BLOCKS.get(ID_ITEM_BUFFER));
 
             tag(ThermalTags.Blocks.DUCTS).add(BLOCKS.get(ID_ENERGY_DUCT));
             tag(ThermalTags.Blocks.DUCTS).add(BLOCKS.get(ID_FLUID_DUCT));
             tag(ThermalTags.Blocks.DUCTS).add(BLOCKS.get(ID_FLUID_DUCT_WINDOWED));
+            tag(ThermalTags.Blocks.DUCTS).add(BLOCKS.get(ID_ITEM_DUCT));
+            tag(ThermalTags.Blocks.DUCTS).addOptional(chemicalDuct);
             // endregion
         }
 

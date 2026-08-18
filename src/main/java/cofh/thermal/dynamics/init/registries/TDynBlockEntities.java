@@ -4,6 +4,7 @@ import cofh.thermal.dynamics.common.block.entity.ItemBufferBlockEntity;
 import cofh.thermal.dynamics.common.block.entity.duct.EnergyDuctBlockEntity;
 import cofh.thermal.dynamics.common.block.entity.duct.FluidDuctBlockEntity;
 import cofh.thermal.dynamics.common.block.entity.duct.FluidDuctWindowedBlockEntity;
+import cofh.thermal.dynamics.common.block.entity.duct.ItemDuctBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 
 import java.util.function.Supplier;
@@ -25,6 +26,7 @@ public class TDynBlockEntities {
     public static final Supplier<BlockEntityType<EnergyDuctBlockEntity>> ENERGY_DUCT_BLOCK_ENTITY = BLOCK_ENTITIES.register(ID_ENERGY_DUCT, () -> BlockEntityType.Builder.of(EnergyDuctBlockEntity::new, BLOCKS.get(ID_ENERGY_DUCT)).build(null));
     public static final Supplier<BlockEntityType<FluidDuctBlockEntity>> FLUID_DUCT_BLOCK_ENTITY = BLOCK_ENTITIES.register(ID_FLUID_DUCT, () -> BlockEntityType.Builder.of(FluidDuctBlockEntity::new, BLOCKS.get(ID_FLUID_DUCT)).build(null));
     public static final Supplier<BlockEntityType<FluidDuctWindowedBlockEntity>> FLUID_DUCT_WINDOWED_BLOCK_ENTITY = BLOCK_ENTITIES.register(ID_FLUID_DUCT_WINDOWED, () -> BlockEntityType.Builder.of(FluidDuctWindowedBlockEntity::new, BLOCKS.get(ID_FLUID_DUCT_WINDOWED)).build(null));
+    public static final Supplier<BlockEntityType<ItemDuctBlockEntity>> ITEM_DUCT_BLOCK_ENTITY = BLOCK_ENTITIES.register(ID_ITEM_DUCT, () -> BlockEntityType.Builder.of(ItemDuctBlockEntity::new, BLOCKS.get(ID_ITEM_DUCT)).build(null));
 
     //        TILE_ENTITIES.register(ID_ENERGY_DISTRIBUTOR, () -> TileEntityType.Builder.of(EnergyDistributorTile::new, ENERGY_DISTRIBUTOR_BLOCK).build(null));
 
