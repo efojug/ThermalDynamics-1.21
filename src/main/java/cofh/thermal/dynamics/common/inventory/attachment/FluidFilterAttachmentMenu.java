@@ -48,7 +48,7 @@ public class FluidFilterAttachmentMenu extends AttachmentMenu implements IFilter
             int rows = MathHelper.clamp(slots / 3, 1, 3);
             int rowSize = slots / rows;
 
-            int xOffset = 62 - 9 * rowSize;
+            int xOffset = 82 - 9 * rowSize;
             int yOffset = 44 - 9 * rows;
 
             for (int i = 0; i < filter.size(); ++i) {

@@ -63,7 +63,7 @@ public class FluidFilterAttachmentScreen extends ContainerScreenCoFH<FluidFilter
     // region ELEMENTS
     protected void addButtons() {
 
-        addElement(new ElementButton(this, 121, 22) {
+            addElement(new ElementButton(this, 131, 22) {
 
             @Override
             public boolean mouseClicked(double mouseX, double mouseY, int mouseButton) {
@@ -78,7 +78,7 @@ public class FluidFilterAttachmentScreen extends ContainerScreenCoFH<FluidFilter
                 .setTooltipFactory(new SimpleTooltip(Component.translatable("info.cofh.filter.allowlist.0")))
                 .setVisible(() -> !menu.getAllowList()));
 
-        addElement(new ElementButton(this, 121, 22) {
+        addElement(new ElementButton(this, 131, 22) {
 
             @Override
             public boolean mouseClicked(double mouseX, double mouseY, int mouseButton) {
@@ -93,7 +93,7 @@ public class FluidFilterAttachmentScreen extends ContainerScreenCoFH<FluidFilter
                 .setTooltipFactory(new SimpleTooltip(Component.translatable("info.cofh.filter.allowlist.1")))
                 .setVisible(() -> menu.getAllowList()));
 
-        addElement(new ElementButton(this, 121, 44) {
+        addElement(new ElementButton(this, 131, 44) {
 
             @Override
             public boolean mouseClicked(double mouseX, double mouseY, int mouseButton) {
@@ -108,7 +108,7 @@ public class FluidFilterAttachmentScreen extends ContainerScreenCoFH<FluidFilter
                 .setTooltipFactory(new SimpleTooltip(Component.translatable("info.cofh.filter.checkNBT.0")))
                 .setVisible(() -> !menu.getCheckNBT()));
 
-        addElement(new ElementButton(this, 121, 44) {
+        addElement(new ElementButton(this, 131, 44) {
 
             @Override
             public boolean mouseClicked(double mouseX, double mouseY, int mouseButton) {
@@ -123,7 +123,7 @@ public class FluidFilterAttachmentScreen extends ContainerScreenCoFH<FluidFilter
                 .setTooltipFactory(new SimpleTooltip(Component.translatable("info.cofh.filter.checkNBT.1")))
                 .setVisible(() -> menu.getCheckNBT()));
 
-        addElement(new ElementButton(this, 143, 33) {
+        addElement(new ElementButton(this, 153, 33) {
 
             @Override
             public boolean mouseClicked(double mouseX, double mouseY, int mouseButton) {
@@ -142,7 +142,7 @@ public class FluidFilterAttachmentScreen extends ContainerScreenCoFH<FluidFilter
                 .setTooltipFactory(new SimpleTooltip(Component.translatable("info.thermal.filter_attachment.mode.0")))
                 .setVisible(() -> attachment.getFilterMode() == FilterMode.BIDIRECTIONAL));
 
-        addElement(new ElementButton(this, 143, 33) {
+        addElement(new ElementButton(this, 153, 33) {
 
             @Override
             public boolean mouseClicked(double mouseX, double mouseY, int mouseButton) {
@@ -161,7 +161,7 @@ public class FluidFilterAttachmentScreen extends ContainerScreenCoFH<FluidFilter
                 .setTooltipFactory(new SimpleTooltip(Component.translatable("info.thermal.filter_attachment.mode.1")))
                 .setVisible(() -> attachment.getFilterMode() == FilterMode.TO_EXTERNAL_ONLY));
 
-        addElement(new ElementButton(this, 143, 33) {
+        addElement(new ElementButton(this, 153, 33) {
 
             @Override
             public boolean mouseClicked(double mouseX, double mouseY, int mouseButton) {

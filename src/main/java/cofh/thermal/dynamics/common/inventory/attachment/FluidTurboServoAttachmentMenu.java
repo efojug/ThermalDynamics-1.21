@@ -54,7 +54,7 @@ public class FluidTurboServoAttachmentMenu extends AttachmentMenu implements IFi
             int rows = MathHelper.clamp(slots / 3, 1, 3);
             int rowSize = slots / rows;
 
-            int xOffset = 53 - 9 * rowSize;
+            int xOffset = getCenteredServoFilterX(rowSize);
             int yOffset = 44 - 9 * rows;
 
             for (int i = 0; i < filter.size(); ++i) {

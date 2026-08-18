@@ -14,6 +14,11 @@ import org.jetbrains.annotations.Nullable;
 
 public abstract class AttachmentMenu extends ContainerMenuCoFH {
 
+    private static final int GUI_WIDTH = 176;
+    private static final int FILTER_SLOT_SPACING = 18;
+    private static final int SERVO_FILTER_BUTTON_GAP = 7;
+    private static final int SERVO_FILTER_BUTTON_WIDTH = 20;
+
     public final BlockEntity hostTile;
     public final IAttachment baseAttachment;
 
@@ -33,6 +38,16 @@ public abstract class AttachmentMenu extends ContainerMenuCoFH {
     public boolean stillValid(Player player) {
 
         return baseAttachment != null && hostTile != null && !hostTile.isRemoved();
+    }
+
+    protected static int getCenteredContentX(int contentWidth) {
+
+        return (GUI_WIDTH - contentWidth) / 2;
+    }
+
+    protected static int getCenteredServoFilterX(int rowSize) {
+
+        return getCenteredContentX(rowSize * FILTER_SLOT_SPACING + SERVO_FILTER_BUTTON_GAP + SERVO_FILTER_BUTTON_WIDTH);
     }
 
 }
