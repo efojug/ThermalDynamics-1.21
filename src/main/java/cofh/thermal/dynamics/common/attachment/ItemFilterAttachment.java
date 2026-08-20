@@ -26,13 +26,14 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.items.IItemHandler;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 
 import static cofh.lib.util.constants.NBTTags.TAG_TYPE;
 import static cofh.thermal.core.ThermalCore.ITEMS;
@@ -40,7 +41,6 @@ import static cofh.thermal.dynamics.client.TDynTextures.FILTER_ATTACHMENT_ACTIVE
 import static cofh.thermal.dynamics.client.TDynTextures.FILTER_ATTACHMENT_LOC;
 import static cofh.thermal.dynamics.init.registries.TDynIDs.FILTER;
 import static cofh.thermal.dynamics.init.registries.TDynIDs.ID_FILTER_ATTACHMENT;
-import static net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK;
 
 /**
  * The item duct's only extraction attachment. Pulls filtered items from the adjacent inventory each
@@ -54,14 +54,24 @@ public class ItemFilterAttachment implements IFilterableAttachment, IRedstoneCon
 
     protected final IDuct<?, ?> duct;
     protected final Direction side;
+    private final Set<BlockPos> excludedTargets;
     protected final BaseItemFilter filter = new BaseItemFilter(15);
     protected final RedstoneControlLogic rsControl = new RedstoneControlLogic(this);
     protected final List<ItemStack> legacyStuffedItems = new ArrayList<>();
+    @Nullable
+    private SourceSnapshot sourceSnapshot;
+    @Nullable
+    private ItemDuctBlockEntity tickItemDuct;
+    @Nullable
+    private ItemGrid tickItemGrid;
+    @Nullable
+    private SourceSnapshot tickSource;
 
     public ItemFilterAttachment(IDuct<?, ?> duct, Direction side) {
 
         this.duct = duct;
         this.side = side;
+        this.excludedTargets = Set.of(duct.getHostPos().relative(side));
     }
 
     @Override
@@ -79,6 +89,10 @@ public class ItemFilterAttachment implements IFilterableAttachment, IRedstoneCon
     @Override
     public void invalidate() {
 
+        sourceSnapshot = null;
+        tickItemDuct = null;
+        tickItemGrid = null;
+        tickSource = null;
     }
 
     @Override
@@ -141,14 +155,31 @@ public class ItemFilterAttachment implements IFilterableAttachment, IRedstoneCon
         if (!rsControl.getState()) {
             return;
         }
-        if (itemDuct.getGrid() == null || itemDuct.getGrid().hasWaitingItems()) {
+        ItemGrid itemGrid = itemDuct.getGrid();
+        if (itemGrid == null || itemGrid.hasWaitingItems()) {
             return;
         }
+        IItemHandler handler = itemDuct.getCachedExternalItemHandler(side);
+        int slotCount = handler == null ? 0 : handler.getSlots();
+        if (slotCount <= 0) {
+            return;
+        }
+        SourceSnapshot source = sourceSnapshot(handler, slotCount);
+        // This is a transport-stack budget (16 * 64 by default), not an inventory-slot limit.
         int maxStacks = TDynConfig.itemFilterStacksPerTick;
-        for (int sent = 0; sent < maxStacks; ++sent) {
-            if (!pullAndRoute()) {
-                break;
+        tickItemDuct = itemDuct;
+        tickItemGrid = itemGrid;
+        tickSource = source;
+        try {
+            for (int sent = 0; sent < maxStacks; ++sent) {
+                if (!pullAndRoute()) {
+                    break;
+                }
             }
+        } finally {
+            tickItemDuct = null;
+            tickItemGrid = null;
+            tickSource = null;
         }
     }
 
@@ -160,6 +191,9 @@ public class ItemFilterAttachment implements IFilterableAttachment, IRedstoneCon
 
     protected boolean pullAndRoute() {
 
+        if (tickItemDuct != null && tickItemGrid != null && tickSource != null) {
+            return pullAndRoute(tickItemDuct, tickItemGrid, tickSource, excludedTargets);
+        }
         if (!(duct instanceof ItemDuctBlockEntity itemDuct) || world() == null) {
             return false;
         }
@@ -167,30 +201,43 @@ public class ItemFilterAttachment implements IFilterableAttachment, IRedstoneCon
         if (itemGrid == null || itemGrid.hasWaitingItems()) {
             return false;
         }
-        BlockPos target = pos().relative(side);
-        BlockEntity targetTile = world().getBlockEntity(target);
-        IItemHandler handler = targetTile == null ? null : world().getCapability(BLOCK, target,
-                targetTile.getBlockState(), targetTile, side.getOpposite());
-        if (handler == null || handler.getSlots() <= 0) {
+        IItemHandler handler = itemDuct.getCachedExternalItemHandler(side);
+        int slotCount = handler == null ? 0 : handler.getSlots();
+        if (slotCount <= 0) {
             return false;
         }
-        ItemStack candidate = findCandidate(handler);
-        if (candidate.isEmpty()) {
+        return pullAndRoute(itemDuct, itemGrid, sourceSnapshot(handler, slotCount), excludedTargets);
+    }
+
+    private SourceSnapshot sourceSnapshot(IItemHandler handler, int slotCount) {
+
+        if (sourceSnapshot == null || !sourceSnapshot.matches(handler, slotCount)) {
+            sourceSnapshot = new SourceSnapshot(handler, slotCount);
+        } else {
+            sourceSnapshot.reset();
+        }
+        return sourceSnapshot;
+    }
+
+    private boolean pullAndRoute(ItemDuctBlockEntity itemDuct, ItemGrid itemGrid, SourceSnapshot source,
+            Set<BlockPos> excludedTargets) {
+
+        Candidate candidate = findCandidate(source);
+        if (candidate == null) {
             return false;
         }
-        ItemRoute route = itemGrid.findRoute(pos(), java.util.Set.of(pos().relative(side)), candidate, null, null);
-        if (route == null) {
+        ItemGrid.RouteCapacity routed = itemGrid.findRouteWithCapacity(pos(), excludedTargets, candidate.stack(), null, null);
+        if (routed == null) {
             return false;
         }
-        int capacity = itemGrid.getInsertCapacity(route, candidate);
-        if (capacity <= 0) {
-            return false;
-        }
-        ItemStack sending = candidate.copyWithCount(Math.min(candidate.getCount(), capacity));
-        ItemStack extracted = extractMatching(handler, sending);
+        ItemRoute route = routed.route();
+        int capacity = routed.capacity();
+        ItemStack sending = candidate.stack().copyWithCount(Math.min(candidate.stack().getCount(), capacity));
+        ItemStack extracted = extractMatching(source, sending, candidate.slots(), candidate.slotCount());
         if (extracted.isEmpty()) {
             return false;
         }
+        source.advanceCandidate(candidate.startSlot(), candidate.stack());
         itemDuct.addTravelingItem(new TravelingItem(extracted, pos(), side, route));
         return true;
     }
@@ -217,14 +264,12 @@ public class ItemFilterAttachment implements IFilterableAttachment, IRedstoneCon
             return stack;
         }
         ItemStack sending = stack.copyWithCount(Math.min(stack.getCount(), TRANSFER));
-        ItemRoute route = itemDuct.getGrid().findRoute(pos(), java.util.Set.of(pos().relative(side)), sending, null, null);
-        if (route == null) {
+        ItemGrid.RouteCapacity routed = itemDuct.getGrid().findRouteWithCapacity(pos(), excludedTargets, sending, null, null);
+        if (routed == null) {
             return stack;
         }
-        int capacity = itemDuct.getGrid().getInsertCapacity(route, sending);
-        if (capacity <= 0) {
-            return stack;
-        }
+        ItemRoute route = routed.route();
+        int capacity = routed.capacity();
         sending = sending.copyWithCount(Math.min(sending.getCount(), capacity));
         if (!simulate) {
             itemDuct.addTravelingItem(new TravelingItem(sending, pos(), side, route));
@@ -232,43 +277,283 @@ public class ItemFilterAttachment implements IFilterableAttachment, IRedstoneCon
         return stack.copyWithCount(stack.getCount() - sending.getCount());
     }
 
-    private ItemStack findCandidate(IItemHandler handler) {
+    private Candidate findCandidate(SourceSnapshot source) {
 
-        for (int slot = 0; slot < handler.getSlots(); ++slot) {
-            ItemStack initial = handler.extractItem(slot, TRANSFER, true);
+        int slotCount = source.slots();
+        int activeStart = source.activeCandidateStart();
+        if (activeStart >= 0 && activeStart < slotCount) {
+            ItemStack initial = source.get(activeStart);
+            if (!initial.isEmpty() && filter.valid(initial)) {
+                return buildCandidate(source, initial, activeStart, source.activeCandidateCount());
+            }
+            source.discardCandidate();
+        }
+        int start = Math.min(source.candidateCursor(), slotCount);
+        for (int slot = start; slot < slotCount; ++slot) {
+            ItemStack initial = source.get(slot);
             if (initial.isEmpty() || !filter.valid(initial)) {
+                source.skipTo(slot + 1);
                 continue;
             }
-            ItemStack combined = initial.copy();
-            for (int next = slot + 1; next < handler.getSlots() && combined.getCount() < TRANSFER; ++next) {
-                ItemStack extra = handler.extractItem(next, TRANSFER - combined.getCount(), true);
-                if (!extra.isEmpty() && ItemHelper.itemsEqualWithTags(initial, extra)) {
-                    combined.grow(extra.getCount());
-                }
-            }
-            return combined;
+            return buildCandidate(source, initial, slot, 0);
         }
-        return ItemStack.EMPTY;
+        source.finishScan(slotCount);
+        return null;
     }
 
-    private ItemStack extractMatching(IItemHandler handler, ItemStack candidate) {
+    private Candidate buildCandidate(SourceSnapshot source, ItemStack initial, int startSlot, int previousCount) {
+
+        ItemStack combined = initial.copyWithCount(Math.min(initial.getCount(), TRANSFER));
+        // At most TRANSFER slots can contribute a positive amount to one transport stack.
+        int[] matchingSlots = source.candidateSlots();
+        int matchingCount = 1;
+        matchingSlots[0] = startSlot;
+        for (int i = 1; i < previousCount && combined.getCount() < TRANSFER; ++i) {
+            int slot = matchingSlots[i];
+            if (slot <= startSlot) {
+                continue;
+            }
+            ItemStack extra = source.get(slot);
+            if (!extra.isEmpty() && ItemHelper.itemsEqualWithTags(initial, extra)) {
+                int amount = Math.min(TRANSFER - combined.getCount(), extra.getCount());
+                if (amount > 0) {
+                    combined.grow(amount);
+                    matchingSlots[matchingCount++] = slot;
+                }
+            }
+        }
+        for (int next = startSlot + 1; next < source.slots() && combined.getCount() < TRANSFER; ++next) {
+            if (containsSlot(matchingSlots, matchingCount, next)) {
+                continue;
+            }
+            ItemStack extra = source.get(next);
+            if (!extra.isEmpty() && ItemHelper.itemsEqualWithTags(initial, extra)) {
+                int amount = Math.min(TRANSFER - combined.getCount(), extra.getCount());
+                if (amount > 0) {
+                    combined.grow(amount);
+                    matchingSlots[matchingCount++] = next;
+                }
+            }
+        }
+        source.beginCandidate(startSlot, matchingCount);
+        return new Candidate(combined, matchingSlots, matchingCount, startSlot);
+    }
+
+    private ItemStack extractMatching(SourceSnapshot source, ItemStack candidate, int[] preferredSlots, int preferredCount) {
 
         ItemStack combined = ItemStack.EMPTY;
         int remaining = candidate.getCount();
-        for (int slot = 0; slot < handler.getSlots() && remaining > 0; ++slot) {
-            ItemStack sample = handler.extractItem(slot, remaining, true);
-            if (sample.isEmpty() || !ItemHelper.itemsEqualWithTags(candidate, sample)) {
+        for (int i = 0; i < preferredCount; ++i) {
+            if (remaining <= 0) {
+                break;
+            }
+            int slot = preferredSlots[i];
+            ItemStack extracted = extractFromSlot(source, candidate, slot, remaining);
+            if (!extracted.isEmpty()) {
+                combined = append(combined, extracted);
+                remaining -= extracted.getCount();
+            }
+        }
+        // A different block entity may have changed the source between the snapshot and execute.
+        // Preserve the old fallback behavior by checking slots that were not in the plan.
+        for (int slot = 0; slot < source.slots() && remaining > 0; ++slot) {
+            if (containsSlot(preferredSlots, preferredCount, slot)) {
                 continue;
             }
-            ItemStack extracted = handler.extractItem(slot, remaining, false);
-            if (combined.isEmpty()) {
-                combined = extracted;
-            } else {
-                combined.grow(extracted.getCount());
+            ItemStack extracted = extractFromSlot(source, candidate, slot, remaining);
+            if (!extracted.isEmpty()) {
+                combined = append(combined, extracted);
+                remaining -= extracted.getCount();
             }
-            remaining -= extracted.getCount();
         }
         return combined;
+    }
+
+    private ItemStack extractFromSlot(SourceSnapshot source, ItemStack candidate, int slot, int amount) {
+
+        ItemStack sample = source.refresh(slot, amount);
+        if (sample.isEmpty() || !ItemHelper.itemsEqualWithTags(candidate, sample)) {
+            return ItemStack.EMPTY;
+        }
+        ItemStack extracted = source.handler().extractItem(slot, amount, false);
+        // Re-simulate lazily if another batch reaches this slot. This also handles custom handlers
+        // whose slot limit is larger than the normal item max stack size.
+        source.invalidate(slot);
+        return extracted;
+    }
+
+    private static ItemStack append(ItemStack combined, ItemStack extracted) {
+
+        if (combined.isEmpty()) {
+            return extracted;
+        }
+        combined.grow(extracted.getCount());
+        return combined;
+    }
+
+    private static boolean containsSlot(int[] slots, int count, int slot) {
+
+        for (int i = 0; i < count; ++i) {
+            if (slots[i] == slot) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private record Candidate(ItemStack stack, int[] slots, int slotCount, int startSlot) {
+
+    }
+
+    /**
+     * A tick-scoped lazy view of the source handler. IItemHandler has no content-version contract,
+     * so retaining this across ticks could hide items inserted by another block entity or a player.
+     */
+    private static final class SourceSnapshot {
+
+        private final IItemHandler handler;
+        private final ItemStack[] stacks;
+        private final int[] candidateSlots;
+        private int[] touchedSlots;
+        private int touchedCount;
+        private int candidateCursor;
+        private int activeCandidateStart = -1;
+        private int activeCandidateCount;
+
+        private SourceSnapshot(IItemHandler handler, int slotCount) {
+
+            this.handler = handler;
+            this.stacks = new ItemStack[Math.max(0, slotCount)];
+            this.candidateSlots = new int[Math.min(stacks.length, TRANSFER)];
+            this.touchedSlots = new int[Math.min(stacks.length, TRANSFER)];
+        }
+
+        private boolean matches(IItemHandler handler, int slotCount) {
+
+            return this.handler == handler && stacks.length == slotCount;
+        }
+
+        private void reset() {
+
+            for (int i = 0; i < touchedCount; ++i) {
+                stacks[touchedSlots[i]] = null;
+            }
+            touchedCount = 0;
+            candidateCursor = 0;
+            activeCandidateStart = -1;
+            activeCandidateCount = 0;
+        }
+
+        private IItemHandler handler() {
+
+            return handler;
+        }
+
+        private int slots() {
+
+            return stacks.length;
+        }
+
+        private int[] candidateSlots() {
+
+            return candidateSlots;
+        }
+
+        private int candidateCursor() {
+
+            return candidateCursor;
+        }
+
+        private int activeCandidateStart() {
+
+            return activeCandidateStart;
+        }
+
+        private int activeCandidateCount() {
+
+            return activeCandidateCount;
+        }
+
+        private void beginCandidate(int startSlot, int count) {
+
+            candidateCursor = startSlot;
+            activeCandidateStart = startSlot;
+            activeCandidateCount = count;
+        }
+
+        private void skipTo(int slot) {
+
+            candidateCursor = Math.max(candidateCursor, Math.min(stacks.length, slot));
+        }
+
+        private void discardCandidate() {
+
+            if (activeCandidateStart >= 0) {
+                candidateCursor = Math.min(stacks.length, activeCandidateStart + 1);
+            }
+            activeCandidateStart = -1;
+            activeCandidateCount = 0;
+        }
+
+        private void finishScan(int slotCount) {
+
+            candidateCursor = slotCount;
+            activeCandidateStart = -1;
+            activeCandidateCount = 0;
+        }
+
+        private void advanceCandidate(int startSlot, ItemStack candidate) {
+
+            if (activeCandidateStart != startSlot || activeCandidateCount <= 0) {
+                candidateCursor = Math.min(stacks.length, startSlot + 1);
+                return;
+            }
+            ItemStack remaining = get(startSlot);
+            if (!remaining.isEmpty() && ItemHelper.itemsEqualWithTags(candidate, remaining)) {
+                candidateCursor = startSlot;
+            } else {
+                candidateCursor = Math.min(stacks.length, startSlot + 1);
+                activeCandidateStart = -1;
+                activeCandidateCount = 0;
+            }
+        }
+
+        private ItemStack get(int slot) {
+
+            if (slot < 0 || slot >= stacks.length) {
+                return ItemStack.EMPTY;
+            }
+            ItemStack stack = stacks[slot];
+            return stack == null ? refresh(slot, TRANSFER) : stack;
+        }
+
+        private ItemStack refresh(int slot, int amount) {
+
+            if (slot < 0 || slot >= stacks.length) {
+                return ItemStack.EMPTY;
+            }
+            if (stacks[slot] == null) {
+                rememberTouched(slot);
+            }
+            ItemStack stack = handler.extractItem(slot, amount, true);
+            stacks[slot] = stack.isEmpty() ? ItemStack.EMPTY : stack.copy();
+            return stacks[slot];
+        }
+
+        private void rememberTouched(int slot) {
+
+            if (touchedCount >= touchedSlots.length) {
+                touchedSlots = Arrays.copyOf(touchedSlots, Math.max(1, touchedSlots.length * 2));
+            }
+            touchedSlots[touchedCount++] = slot;
+        }
+
+        private void invalidate(int slot) {
+
+            if (slot >= 0 && slot < stacks.length) {
+                stacks[slot] = null;
+            }
+        }
     }
 
     @Override

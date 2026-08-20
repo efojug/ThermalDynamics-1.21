@@ -272,12 +272,17 @@ public class GridContainer extends SavedData implements IGridContainer {
         if (node != null) {
             if (!canExternallyConnect) {
                 simplifyNode(node);
+                // Neighbor changes can simplify this node (or otherwise change its cached
+                // external topology). Notify the concrete grid even when the node graph did not
+                // split.
+                grid.onModified();
             }
             node.clearConnections();
             return true;
         } else {
             if (canExternallyConnect) {
                 grid.getNodeOrSplitEdgeAndInsertNode(duct.getHostPos());
+                grid.onModified();
                 return true;
             }
         }

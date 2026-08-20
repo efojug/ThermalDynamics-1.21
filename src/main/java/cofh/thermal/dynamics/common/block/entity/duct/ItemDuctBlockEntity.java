@@ -203,10 +203,11 @@ public class ItemDuctBlockEntity extends DuctBlockEntity<ItemGrid, ItemGridNode>
                 ItemStack legacy = iterator.next();
                 if (legacy.isEmpty()) { iterator.remove(); continue; }
                 ItemStack sending = legacy.copyWithCount(Math.min(legacy.getCount(), ItemFilterAttachment.TRANSFER));
-                ItemRoute route = itemGrid.findRoute(getBlockPos(), java.util.Set.of(getBlockPos().relative(side)), sending, null, null);
-                if (route == null) continue;
-                int capacity = itemGrid.getInsertCapacity(route, sending);
-                if (capacity <= 0) continue;
+                ItemGrid.RouteCapacity routed = itemGrid.findRouteWithCapacity(getBlockPos(),
+                        java.util.Set.of(getBlockPos().relative(side)), sending, null, null);
+                if (routed == null) continue;
+                ItemRoute route = routed.route();
+                int capacity = routed.capacity();
                 sending = sending.copyWithCount(Math.min(sending.getCount(), capacity));
                 addTravelingItem(new TravelingItem(sending, getBlockPos(), side, route));
                 legacy.shrink(sending.getCount());
@@ -274,12 +275,7 @@ public class ItemDuctBlockEntity extends DuctBlockEntity<ItemGrid, ItemGridNode>
         if (GridHelper.getGridHost(level, target) != null) {
             return stack;
         }
-        BlockEntity targetTile = level.getBlockEntity(target);
-        if (targetTile == null) {
-            return stack;
-        }
-        IItemHandler handler = level.getCapability(Capabilities.ItemHandler.BLOCK, target,
-                targetTile.getBlockState(), targetTile, side.getOpposite());
+        IItemHandler handler = getCachedExternalItemHandler(side);
         return handler == null || handler.getSlots() <= 0 ? stack : ItemHandlerHelper.insertItemStacked(handler, stack, false);
     }
 
@@ -299,13 +295,16 @@ public class ItemDuctBlockEntity extends DuctBlockEntity<ItemGrid, ItemGridNode>
         while (!remaining.isEmpty()) {
             int amount = Math.min(remaining.getCount(), remaining.getMaxStackSize());
             ItemStack sending = remaining.copyWithCount(amount);
-            ItemRoute route = itemGrid.findRoute(getBlockPos(), excludedTargets, sending, null, null);
-            if (route == null) {
+            ItemGrid.RouteCapacity routed = itemGrid.findRouteWithCapacity(getBlockPos(), excludedTargets, sending, null, null);
+            if (routed == null) {
                 return remaining;
             }
+            ItemRoute route = routed.route();
             BlockPos target = route.destination().relative(route.destinationSide());
             int simulatedReserved = simulatedReservations.getOrDefault(target, 0);
-            int capacity = itemGrid.getInsertCapacity(route, sending, simulatedReserved);
+            int capacity = simulatedReserved > 0
+                    ? itemGrid.getInsertCapacity(route, sending, simulatedReserved)
+                    : routed.capacity();
             if (capacity <= 0) {
                 if (simulate && simulatedReserved > 0) {
                     excludedTargets.add(target);

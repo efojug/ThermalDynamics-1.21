@@ -3,17 +3,16 @@ package cofh.thermal.dynamics.common.grid.item;
 import cofh.thermal.dynamics.api.grid.IDuct;
 import cofh.thermal.dynamics.api.helper.GridHelper;
 import cofh.thermal.dynamics.common.attachment.ItemFilterAttachment;
-import cofh.thermal.dynamics.common.block.entity.duct.DuctBlockEntity;
 import cofh.thermal.dynamics.common.block.entity.duct.ItemDuctBlockEntity;
 import cofh.thermal.dynamics.common.grid.Grid;
 import com.google.common.graph.EndpointPair;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.chunk.ChunkAccess;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.ItemHandlerHelper;
@@ -24,6 +23,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -40,7 +40,13 @@ public class ItemGrid extends Grid<ItemGrid, ItemGridNode> {
     private final Set<ItemDuctBlockEntity> activeDucts = new LinkedHashSet<>();
     private final Set<ItemDuctBlockEntity> dirtyDucts = new LinkedHashSet<>();
     private final Map<BlockPos, Search> searchCache = new HashMap<>();
-    /** In-flight capacity reservations indexed by external target position (loaded ducts only). */
+    /**
+     * Structural output candidates. The duct and endpoint capacity remain live; only the set and
+     * ordering of sides that can structurally be outputs are cached here.
+     */
+    private final Map<BlockPos, Direction[]> outputEndpointCache = new HashMap<>();
+    private boolean outputEndpointCacheDirty = true;
+    /** In-flight capacity reservations indexed by external target position for tracked ducts. */
     private final Map<BlockPos, List<TravelingItem>> reservations = new HashMap<>();
     private List<ItemDuctBlockEntity> activeSnapshot = List.of();
     private boolean activeDirty = true;
@@ -76,29 +82,37 @@ public class ItemGrid extends Grid<ItemGrid, ItemGridNode> {
             if (duct.isRemoved() || duct.getGrid() != this || !duct.hasTravelingItems()) {
                 if (activeDucts.remove(duct)) {
                     activeDirty = true;
-                    // Unloaded/foreign ducts keep their items but stop reserving capacity here;
-                    // re-tracking on load rebuilds their reservations.
+                    // Foreign or removed ducts no longer belong to this grid, so their
+                    // reservations must not affect routes selected by this grid.
                     for (TravelingItem item : duct.getTravelingItems()) {
                         removeReservation(item);
                     }
                 }
                 continue;
             }
-            duct.serverTick();
-        }
-        for (ItemDuctBlockEntity duct : dirtyDucts) {
-            if (!duct.isRemoved() && duct.getGrid() == this) {
-                duct.syncTravelingItems();
+            // A duct can remain represented by this grid while its chunk is unloaded. Keep its
+            // active set and reservations intact so it resumes from the same state on reload.
+            if (isCurrentLoadedDuct(duct)) {
+                duct.serverTick();
             }
         }
-        dirtyDucts.clear();
+        for (Iterator<ItemDuctBlockEntity> iterator = dirtyDucts.iterator(); iterator.hasNext(); ) {
+            ItemDuctBlockEntity duct = iterator.next();
+            if (!duct.isRemoved() && duct.getGrid() == this) {
+                if (!isCurrentLoadedDuct(duct)) {
+                    continue;
+                }
+                duct.syncTravelingItems();
+            }
+            iterator.remove();
+        }
     }
 
     @Override
     public void onModified() {
 
         attachmentNodesDirty = true;
-        searchCache.clear();
+        invalidateRouteCaches();
         super.onModified();
     }
 
@@ -106,12 +120,13 @@ public class ItemGrid extends Grid<ItemGrid, ItemGridNode> {
     public void onAttachmentsChanged() {
 
         attachmentNodesDirty = true;
-        searchCache.clear();
+        invalidateRouteCaches();
     }
 
     @Override
     public void onMerge(ItemGrid from) {
 
+        invalidateRouteCaches();
         scanTrackedDucts();
         recountWaitingItems();
     }
@@ -119,10 +134,28 @@ public class ItemGrid extends Grid<ItemGrid, ItemGridNode> {
     @Override
     public void onSplit(List<ItemGrid> others) {
 
+        invalidateRouteCaches();
         for (ItemGrid grid : others) {
+            grid.invalidateRouteCaches();
             grid.scanTrackedDucts();
             grid.recountWaitingItems();
         }
+    }
+
+    @Override
+    public boolean onChunkLoad(ChunkAccess chunk) {
+
+        invalidateRouteCaches();
+        return super.onChunkLoad(chunk);
+    }
+
+    @Override
+    public boolean onChunkUnload(ChunkAccess chunk) {
+
+        invalidateRouteCaches();
+        // Do not remove active ducts or reservations here. Their block entities can still carry
+        // in-flight items and are deliberately resumed by tick() after the chunk loads again.
+        return super.onChunkUnload(chunk);
     }
 
     public boolean hasWaitingItems() {
@@ -207,6 +240,27 @@ public class ItemGrid extends Grid<ItemGrid, ItemGridNode> {
     public void track(ItemDuctBlockEntity duct) {
 
         if (duct.getGrid() == this && duct.hasTravelingItems()) {
+            // Chunk reloads create a new block-entity instance at the same position. Replace the
+            // old reference before adding the new one, otherwise both instances would tick the
+            // same persisted traveling items after the reload.
+            for (Iterator<ItemDuctBlockEntity> iterator = activeDucts.iterator(); iterator.hasNext(); ) {
+                ItemDuctBlockEntity tracked = iterator.next();
+                if (tracked == duct || !tracked.getBlockPos().equals(duct.getBlockPos())) {
+                    continue;
+                }
+                iterator.remove();
+                dirtyDucts.remove(tracked);
+                for (TravelingItem item : tracked.getTravelingItems()) {
+                    removeReservation(item);
+                }
+                activeDirty = true;
+            }
+            for (Iterator<ItemDuctBlockEntity> iterator = dirtyDucts.iterator(); iterator.hasNext(); ) {
+                ItemDuctBlockEntity tracked = iterator.next();
+                if (tracked != duct && tracked.getBlockPos().equals(duct.getBlockPos())) {
+                    iterator.remove();
+                }
+            }
             if (activeDucts.add(duct)) {
                 activeDirty = true;
             }
@@ -222,20 +276,47 @@ public class ItemGrid extends Grid<ItemGrid, ItemGridNode> {
     public ItemRoute findRoute(BlockPos start, @Nullable Set<BlockPos> excludedTargets, net.minecraft.world.item.ItemStack stack,
             @Nullable BlockPos preferredDestination, @Nullable Direction preferredSide) {
 
-        Search search = search(start);
-        if (preferredDestination != null && preferredSide != null && search.parents.containsKey(preferredDestination) &&
-                !containsTarget(excludedTargets, preferredDestination.relative(preferredSide)) &&
-                canInsert(preferredDestination, preferredSide, stack, excludedTargets)) {
-            return buildRoute(start, preferredDestination, preferredSide, search.parents);
+        RouteCapacity result = findRouteWithCapacity(start, excludedTargets, stack, preferredDestination, preferredSide);
+        return result == null ? null : result.route();
+    }
+
+    /**
+     * Finds a route and returns the capacity observed while selecting its endpoint. Callers that
+     * need the capacity should use this method so the endpoint simulation is not repeated after
+     * the route search.
+     */
+    @Nullable
+    public RouteCapacity findRouteWithCapacity(BlockPos start, @Nullable Set<BlockPos> excludedTargets,
+            ItemStack stack, @Nullable BlockPos preferredDestination, @Nullable Direction preferredSide) {
+
+        if (stack.isEmpty()) {
+            return null;
         }
+        Search search = search(start);
+        if (preferredDestination != null && preferredSide != null && search.parents.containsKey(preferredDestination)) {
+            int capacity = getInsertCapacityIfEligible(preferredDestination, preferredSide, stack, excludedTargets);
+            if (capacity > 0) {
+                ItemRoute route = buildRoute(start, preferredDestination, preferredSide, search.parents);
+                return route == null ? null : new RouteCapacity(route, capacity);
+            }
+        }
+        ensureOutputEndpointCache();
         for (BlockPos position : search.order) {
+            Direction[] sides = outputEndpointCache.get(position);
+            if (sides == null) {
+                continue;
+            }
             ItemDuctBlockEntity duct = getItemDuct(position);
             if (duct == null) {
                 continue;
             }
-            for (Direction side : DIRECTIONS) {
-                if (canInsert(position, side, stack, excludedTargets)) {
-                    return buildRoute(start, position, side, search.parents);
+            for (Direction side : sides) {
+                int capacity = getInsertCapacityIfEligible(duct, position, side, stack, excludedTargets);
+                if (capacity > 0) {
+                    ItemRoute route = buildRoute(start, position, side, search.parents);
+                    if (route != null) {
+                        return new RouteCapacity(route, capacity);
+                    }
                 }
             }
         }
@@ -361,21 +442,21 @@ public class ItemGrid extends Grid<ItemGrid, ItemGridNode> {
         return stack.getCount() - remainder.getCount();
     }
 
-    private boolean canInsert(BlockPos position, Direction side, ItemStack stack, @Nullable Set<BlockPos> excludedTargets) {
+    private int getInsertCapacityIfEligible(BlockPos position, Direction side, ItemStack stack,
+            @Nullable Set<BlockPos> excludedTargets) {
 
         ItemDuctBlockEntity duct = getItemDuct(position);
-        if (duct == null || duct.getConnectionType(side) == IDuct.ConnectionType.DISABLED ||
-                duct.getAttachment(side) instanceof ItemFilterAttachment) {
-            return false;
-        }
+        return duct == null ? 0 : getInsertCapacityIfEligible(duct, position, side, stack, excludedTargets);
+    }
+
+    private int getInsertCapacityIfEligible(ItemDuctBlockEntity duct, BlockPos position, Direction side,
+            ItemStack stack, @Nullable Set<BlockPos> excludedTargets) {
+
         BlockPos target = position.relative(side);
         if (containsTarget(excludedTargets, target)) {
-            return false;
+            return 0;
         }
-        if (GridHelper.getGridHost(getLevel(), target) != null) {
-            return false;
-        }
-        return getInsertCapacity(duct, side, stack, 0) > 0;
+        return getInsertCapacity(duct, side, stack, 0);
     }
 
     private static boolean containsTarget(@Nullable Set<BlockPos> targets, BlockPos pos) {
@@ -386,6 +467,54 @@ public class ItemGrid extends Grid<ItemGrid, ItemGridNode> {
     private ItemDuctBlockEntity getItemDuct(BlockPos position) {
 
         return getLevel().isLoaded(position) && getLevel().getBlockEntity(position) instanceof ItemDuctBlockEntity duct && duct.getGrid() == this ? duct : null;
+    }
+
+    private boolean isCurrentLoadedDuct(ItemDuctBlockEntity duct) {
+
+        return getLevel().isLoaded(duct.getBlockPos()) && getLevel().getBlockEntity(duct.getBlockPos()) == duct;
+    }
+
+    private void ensureOutputEndpointCache() {
+
+        if (!outputEndpointCacheDirty) {
+            return;
+        }
+        Map<BlockPos, Direction[]> rebuilt = new HashMap<>();
+        for (BlockPos position : getDuctPositions()) {
+            ItemDuctBlockEntity duct = getItemDuct(position);
+            if (duct == null) {
+                continue;
+            }
+            int count = 0;
+            for (Direction side : DIRECTIONS) {
+                if (duct.getConnectionType(side) != IDuct.ConnectionType.DISABLED &&
+                        !(duct.getAttachment(side) instanceof ItemFilterAttachment)) {
+                    ++count;
+                }
+            }
+            if (count == 0) {
+                continue;
+            }
+            Direction[] sides = new Direction[count];
+            int index = 0;
+            for (Direction side : DIRECTIONS) {
+                if (duct.getConnectionType(side) != IDuct.ConnectionType.DISABLED &&
+                        !(duct.getAttachment(side) instanceof ItemFilterAttachment)) {
+                    sides[index++] = side;
+                }
+            }
+            rebuilt.put(position.immutable(), sides);
+        }
+        outputEndpointCache.clear();
+        outputEndpointCache.putAll(rebuilt);
+        outputEndpointCacheDirty = false;
+    }
+
+    private void invalidateRouteCaches() {
+
+        searchCache.clear();
+        outputEndpointCache.clear();
+        outputEndpointCacheDirty = true;
     }
 
     private void rebuildAttachmentNodes() {
@@ -405,7 +534,7 @@ public class ItemGrid extends Grid<ItemGrid, ItemGridNode> {
         for (BlockPos position : getDuctPositions()) {
             ItemDuctBlockEntity duct = getItemDuct(position);
             if (duct != null && duct.hasTravelingItems()) {
-                activeDucts.add(duct);
+                track(duct);
             }
         }
     }
@@ -432,6 +561,10 @@ public class ItemGrid extends Grid<ItemGrid, ItemGridNode> {
     }
 
     private record Search(Map<BlockPos, Step> parents, List<BlockPos> order) {
+
+    }
+
+    public record RouteCapacity(ItemRoute route, int capacity) {
 
     }
 
