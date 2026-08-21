@@ -237,7 +237,7 @@ public class ItemFilterAttachment implements IFilterableAttachment, IRedstoneCon
         if (extracted.isEmpty()) {
             return false;
         }
-        source.advanceCandidate(candidate.startSlot(), candidate.stack());
+        source.advanceCandidate(candidate.startSlot());
         itemDuct.addTravelingItem(new TravelingItem(extracted, pos(), side, route));
         return true;
     }
@@ -288,16 +288,16 @@ public class ItemFilterAttachment implements IFilterableAttachment, IRedstoneCon
             }
             source.discardCandidate();
         }
-        int start = Math.min(source.candidateCursor(), slotCount);
-        for (int slot = start; slot < slotCount; ++slot) {
+        int start = slotCount == 0 ? 0 : Math.floorMod(source.candidateCursor(), slotCount);
+        for (int offset = 0; offset < slotCount; ++offset) {
+            int slot = (start + offset) % slotCount;
             ItemStack initial = source.get(slot);
             if (initial.isEmpty() || !filter.valid(initial)) {
-                source.skipTo(slot + 1);
                 continue;
             }
             return buildCandidate(source, initial, slot, 0);
         }
-        source.finishScan(slotCount);
+        source.finishScan();
         return null;
     }
 
@@ -439,7 +439,6 @@ public class ItemFilterAttachment implements IFilterableAttachment, IRedstoneCon
                 stacks[touchedSlots[i]] = null;
             }
             touchedCount = 0;
-            candidateCursor = 0;
             activeCandidateStart = -1;
             activeCandidateCount = 0;
         }
@@ -481,11 +480,6 @@ public class ItemFilterAttachment implements IFilterableAttachment, IRedstoneCon
             activeCandidateCount = count;
         }
 
-        private void skipTo(int slot) {
-
-            candidateCursor = Math.max(candidateCursor, Math.min(stacks.length, slot));
-        }
-
         private void discardCandidate() {
 
             if (activeCandidateStart >= 0) {
@@ -495,27 +489,22 @@ public class ItemFilterAttachment implements IFilterableAttachment, IRedstoneCon
             activeCandidateCount = 0;
         }
 
-        private void finishScan(int slotCount) {
+        private void finishScan() {
 
-            candidateCursor = slotCount;
             activeCandidateStart = -1;
             activeCandidateCount = 0;
         }
 
-        private void advanceCandidate(int startSlot, ItemStack candidate) {
+        private void advanceCandidate(int startSlot) {
 
-            if (activeCandidateStart != startSlot || activeCandidateCount <= 0) {
-                candidateCursor = Math.min(stacks.length, startSlot + 1);
-                return;
+            if (stacks.length > 0) {
+                // Rotate after every successful transfer, even when the source slot was replenished.
+                // Otherwise a continuously-fed slot 0 can consume the whole per-tick budget and
+                // starve every later slot indefinitely.
+                candidateCursor = (startSlot + 1) % stacks.length;
             }
-            ItemStack remaining = get(startSlot);
-            if (!remaining.isEmpty() && ItemHelper.itemsEqualWithTags(candidate, remaining)) {
-                candidateCursor = startSlot;
-            } else {
-                candidateCursor = Math.min(stacks.length, startSlot + 1);
-                activeCandidateStart = -1;
-                activeCandidateCount = 0;
-            }
+            activeCandidateStart = -1;
+            activeCandidateCount = 0;
         }
 
         private ItemStack get(int slot) {
