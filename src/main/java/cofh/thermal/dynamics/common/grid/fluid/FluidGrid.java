@@ -4,6 +4,7 @@ import cofh.core.util.helpers.FluidHelper;
 import cofh.thermal.dynamics.api.helper.GridHelper;
 import cofh.thermal.dynamics.common.grid.BufferedContentGrid;
 import cofh.thermal.dynamics.common.grid.GridRenderState;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
@@ -90,7 +91,12 @@ public class FluidGrid extends BufferedContentGrid<FluidGrid, FluidGridNode, Flu
     @Override
     protected void drainHeld(long amount) {
 
-        drain((int) Math.min(amount, Integer.MAX_VALUE), FluidAction.EXECUTE);
+        isDrainingHeld = true;
+        try {
+            drain((int) Math.min(amount, Integer.MAX_VALUE), FluidAction.EXECUTE);
+        } finally {
+            isDrainingHeld = false;
+        }
     }
 
     @Override
@@ -141,6 +147,64 @@ public class FluidGrid extends BufferedContentGrid<FluidGrid, FluidGridNode, Flu
         return null;
     }
 
+    @Nullable
+    @Override
+    @SuppressWarnings ("unchecked")
+    public <T, C> T getExternalCapability(BlockCapability<T, C> capability, BlockPos externalPos) {
+
+        if (capability == Capabilities.FluidHandler.BLOCK) {
+            return (T) new ExternalFluidHandler(externalPos);
+        }
+        return null;
+    }
+
+    /**
+     * The handler handed to a specific neighboring block. Inserts are gated on routability -
+     * content the grid could never deliver anywhere is rejected outright, so push logic that
+     * probes with SIMULATE (AE2 pattern providers, ejectors) picks a real destination instead of
+     * stranding content in the duct. Accepted inserts mark the pusher as a content origin, so
+     * distribution never sends the content back where it came from.
+     */
+    private final class ExternalFluidHandler implements IFluidHandler {
+
+        private final BlockPos externalPos;
+
+        private ExternalFluidHandler(BlockPos externalPos) {
+
+            this.externalPos = externalPos.immutable();
+        }
+
+        //@formatter:off
+        @Override public int getTanks() { return FluidGrid.this.getTanks(); }
+        @Override public @Nonnull FluidStack getFluidInTank(int tank) { return FluidGrid.this.getFluidInTank(tank); }
+        @Override public int getTankCapacity(int tank) { return FluidGrid.this.getTankCapacity(tank); }
+        @Override public boolean isFluidValid(int tank, @Nonnull FluidStack stack) { return FluidGrid.this.isFluidValid(tank, stack); }
+        @Override public @Nonnull FluidStack drain(FluidStack resource, FluidAction action) { return FluidGrid.this.drain(resource, action); }
+        @Override public @Nonnull FluidStack drain(int maxDrain, FluidAction action) { return FluidGrid.this.drain(maxDrain, action); }
+        //@formatter:on
+
+        @Override
+        public int fill(FluidStack resource, FluidAction action) {
+
+            if (resource.isEmpty()) {
+                return 0;
+            }
+            if (simulateRoutable(resource, resource.getAmount(), externalPos) <= 0) {
+                return 0;
+            }
+            if (action.simulate()) {
+                return FluidGrid.this.fill(resource, action);
+            }
+            boolean added = markContentOrigin(externalPos);
+            int filled = FluidGrid.this.fill(resource, action);
+            if (added && filled <= 0) {
+                unmarkContentOrigin(externalPos);
+            }
+            return filled;
+        }
+
+    }
+
     //@formatter:off
     public int getCapacity() { return storage.getCapacity(); }
     public FluidStack getFluid() { return storage.getFluid(); }
@@ -148,8 +212,13 @@ public class FluidGrid extends BufferedContentGrid<FluidGrid, FluidGridNode, Flu
     public FluidStack getRenderFluid() { return renderState.renderStack(); }
     public int getFluidAmount() { return saturatingInt(heldAmountLong()); }
     public void setCapacity(int capacity) { storage.setCapacity(capacity); }
-    public void setFluid(FluidStack fluid) { storage.setFluid(fluid); }
-    public void drainStorage(int amount) { if (amount > 0) storage.drain(amount, FluidAction.EXECUTE); }
+    public void setFluid(FluidStack fluid) {
+        int before = storage.getFluid().getAmount();
+        storage.setFluid(fluid);
+        int after = storage.getFluid().getAmount();
+        if (after >= before) auditNoteIn(after - before); else auditNoteOut(before - after);
+    }
+    public void drainStorage(int amount) { if (amount > 0) auditNoteOut(storage.drain(amount, FluidAction.EXECUTE).getAmount()); }
     public int replayOverflow(FluidStack offered) {
         isReplayingOverflow = true;
         try { return fill(offered, FluidAction.EXECUTE); }
@@ -163,12 +232,18 @@ public class FluidGrid extends BufferedContentGrid<FluidGrid, FluidGridNode, Flu
         return resource.isEmpty() || held.isEmpty() || !FluidStack.isSameFluidSameComponents(resource, held) ? FluidStack.EMPTY : drain(resource.getAmount(), action);
     }
     @Override public FluidStack drain(int maxDrain, FluidAction action) {
-        if (overflowBuffer.isEmpty()) return storage.drain(maxDrain, action);
-        FluidStack pending = overflowBuffer.peek(maxDrain);
-        int pendingAmount = pending.getAmount();
-        if (action.execute()) overflowBuffer.drain(pendingAmount);
-        FluidStack rest = maxDrain > pendingAmount ? storage.drain(maxDrain - pendingAmount, action) : FluidStack.EMPTY;
-        return rest.isEmpty() ? pending : pending.copyWithAmount(pendingAmount + rest.getAmount());
+        FluidStack result;
+        if (overflowBuffer.isEmpty()) {
+            result = storage.drain(maxDrain, action);
+        } else {
+            FluidStack pending = overflowBuffer.peek(maxDrain);
+            int pendingAmount = pending.getAmount();
+            if (action.execute()) overflowBuffer.drain(pendingAmount);
+            FluidStack rest = maxDrain > pendingAmount ? storage.drain(maxDrain - pendingAmount, action) : FluidStack.EMPTY;
+            result = rest.isEmpty() ? pending : pending.copyWithAmount(pendingAmount + rest.getAmount());
+        }
+        if (action.execute() && !isDrainingHeld) auditNoteOut(result.getAmount());
+        return result;
     }
     @Override public int getTankCapacity(int tank) { return storage.getTankCapacity(tank); }
     @Override public boolean isFluidValid(int tank, @Nonnull FluidStack stack) { return storage.isFluidValid(tank, stack); }
@@ -189,9 +264,16 @@ public class FluidGrid extends BufferedContentGrid<FluidGrid, FluidGridNode, Flu
         int added = storage.fill(resource, action);
         int overflow = resource.getAmount() - added;
         if (overflow <= 0) {
+            if (action.execute() && !isReplayingOverflow) {
+                auditNoteIn(added);
+            }
             return added;
         }
-        return added + (int) distributeOverflow(resource, overflow, action.execute());
+        long sent = distributeOverflow(resource, overflow, action.execute());
+        if (action.execute() && !isReplayingOverflow) {
+            auditNoteIn(added + sent);
+        }
+        return added + (int) sent;
     }
 
 }

@@ -185,6 +185,7 @@ public class FluidServoAttachment implements IFilterableAttachment, IRedstoneCon
         int leftover = extracted.getAmount() - inserted;
         if (leftover > 0) {
             long parked = grid.getOverflowBuffer().add(extracted, leftover);
+            grid.auditNoteIn(parked);
             grid.noteOverflowParked();
             if (parked < leftover) {
                 ThermalDynamics.LOG.warn("Fluid overflow buffer rejected {} mB", leftover - parked);

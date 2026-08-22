@@ -132,6 +132,10 @@ public abstract class ContentGridNode<G extends Grid<G, ?>, S, H> extends GridNo
         if (visitedTargets != null && visitedTargets.contains(connection.targetPos)) {
             return 0;
         }
+        // Never deliver content back to the block that pushed it into the grid.
+        if (grid instanceof BufferedContentGrid<?, ?, ?> buffered && buffered.isContentOrigin(connection.targetPos)) {
+            return 0;
+        }
         IAttachment attachment = duct.getAttachment(dir);
         if (connection.consumeInvalidation()) {
             attachment.invalidate();
@@ -141,6 +145,9 @@ public abstract class ContentGridNode<G extends Grid<G, ?>, S, H> extends GridNo
             return 0;
         }
         long accepted = fill(handler, stack, amount, execute);
+        if (execute && accepted > 0 && grid instanceof BufferedContentGrid<?, ?, ?> buffered) {
+            buffered.auditNoteOut(accepted);
+        }
         if (accepted > 0 && visitedTargets != null) {
             visitedTargets.add(connection.targetPos);
         }

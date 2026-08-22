@@ -665,6 +665,17 @@ public abstract class Grid<G extends Grid<G, N>, N extends GridNode<G>> implemen
         return null;
     }
 
+    /**
+     * The capability handed to the external block at {@code externalPos}. Content grids wrap their
+     * handler here so inserts are attributed to the pushing block (backflow prevention); the
+     * default is the plain grid capability.
+     */
+    @Nullable
+    public <T, C> T getExternalCapability(BlockCapability<T, C> capability, BlockPos externalPos) {
+
+        return getCapability(capability);
+    }
+
     public final void debugWriteToPacket(FriendlyByteBuf buffer) {
 
         buffer.writeUUID(getId());

@@ -91,10 +91,136 @@ public abstract class BufferedContentGrid<G extends BufferedContentGrid<G, N, S>
     }
     // endregion
 
+    // region CONTENT ORIGINS
+    // External blocks that inserted the currently held content. The grid never delivers content
+    // back to these positions, so a block that pushes into the duct (an AE2 pattern provider, a
+    // source tank) cannot receive its own content back. The set is an episode: it resets when the
+    // grid runs empty before the next external insert, and on topology changes. Deliberately
+    // transient - not saved to NBT.
+    protected final ObjectOpenHashSet<BlockPos> contentOrigins = new ObjectOpenHashSet<>();
+
+    /** Marks an external inserter for the current content episode; returns true if newly added. */
+    public final boolean markContentOrigin(BlockPos externalPos) {
+
+        if (heldAmountLong() <= 0) {
+            contentOrigins.clear();
+        }
+        return contentOrigins.add(externalPos.immutable());
+    }
+
+    public final void unmarkContentOrigin(BlockPos externalPos) {
+
+        contentOrigins.remove(externalPos);
+    }
+
+    public final boolean isContentOrigin(BlockPos pos) {
+
+        return !contentOrigins.isEmpty() && contentOrigins.contains(pos);
+    }
+
+    protected final void resetContentOrigins() {
+
+        contentOrigins.clear();
+    }
+
+    /**
+     * Simulates how much of {@code resource} the grid could deliver to external endpoints other
+     * than {@code inserter} and the current content origins. Used as the acceptance gate for
+     * external pushes: content with no route forward is rejected outright (like a rejected pipe
+     * connection) instead of parking in the duct with no way to ever leave.
+     */
+    public final long simulateRoutable(S resource, long amount, BlockPos inserter) {
+
+        if (amount <= 0 || contentOps.isEmpty(resource)) {
+            return 0;
+        }
+        List<N> list = nodeList;
+        if (list.size() != getNodes().size()) {
+            list = List.copyOf(getNodes().values());
+            nodeList = list;
+            nodeTracker = 0;
+        }
+        if (list.isEmpty()) {
+            return 0;
+        }
+        visitedTargets.clear();
+        visitedTargets.add(inserter);
+        visitedTargets.addAll(contentOrigins);
+        isSendingContent = true;
+        long toSend = amount;
+        try {
+            for (N node : list) {
+                if (!node.isLoaded()) {
+                    continue;
+                }
+                toSend -= node.transmit(resource, toSend, false, visitedTargets);
+                if (toSend <= 0) {
+                    break;
+                }
+            }
+        } finally {
+            isSendingContent = false;
+            visitedTargets.clear();
+        }
+        return amount - toSend;
+    }
+    // endregion
+
+    // region CONTENT AUDIT
+    // Conservation ledger: heldAmountLong() must change by exactly (external inserts - external
+    // deliveries/extractions) between ticks. Any imbalance is a duplication or void bug; the log
+    // line identifies the tick and direction so in-game reports can be traced to a code path.
+    protected long auditBaseline = Long.MIN_VALUE;
+    protected long auditIn;
+    protected long auditOut;
+    protected boolean isDrainingHeld;
+
+    /** Records content entering held storage from an external party (insert accepted, overflow parked). */
+    public final void auditNoteIn(long amount) {
+
+        if (amount > 0) {
+            auditIn += amount;
+        }
+    }
+
+    /** Records content leaving held storage to an external party (endpoint fill, external extraction). */
+    public final void auditNoteOut(long amount) {
+
+        if (amount > 0) {
+            auditOut += amount;
+        }
+    }
+
+    /** Invalidates the ledger across topology/content redistribution; skips exactly one check. */
+    protected final void auditInvalidate() {
+
+        auditBaseline = Long.MIN_VALUE;
+        auditIn = 0;
+        auditOut = 0;
+    }
+
+    private void auditCheck() {
+
+        long held = heldAmountLong();
+        if (auditBaseline != Long.MIN_VALUE) {
+            long expected = auditBaseline + auditIn - auditOut;
+            if (held != expected) {
+                ThermalDynamics.LOG.error("{} grid {} content imbalance: held {} but expected {} (baseline {} + in {} - out {}) -> {} {}",
+                        contentName, getId(), held, expected, auditBaseline, auditIn, auditOut,
+                        expected > held ? "LOST" : "GAINED", Math.abs(expected - held));
+            }
+        }
+        auditBaseline = held;
+        auditIn = 0;
+        auditOut = 0;
+    }
+    // endregion
+
     // region TICK
     @Override
     public void tick() {
 
+        auditCheck();
         if (distList.size() != getNodes().size()) {
             distList = List.copyOf(getNodes().values());
         }
@@ -221,6 +347,8 @@ public abstract class BufferedContentGrid<G extends BufferedContentGrid<G, N, S>
     @Override
     public void onModified() {
 
+        auditInvalidate();
+        resetContentOrigins();
         distList = List.of();
         nodeList = List.of();
         attachmentNodeList = List.of();
@@ -250,6 +378,10 @@ public abstract class BufferedContentGrid<G extends BufferedContentGrid<G, N, S>
     @Override
     public void onMerge(G from) {
 
+        auditInvalidate();
+        from.auditInvalidate();
+        resetContentOrigins();
+        from.resetContentOrigins();
         long total = heldAmountLong() + from.heldAmountLong();
         S type = contentOps.isEmpty(heldContent()) ? from.heldContent() : heldContent();
         overflowBuffer.clear();
@@ -272,8 +404,12 @@ public abstract class BufferedContentGrid<G extends BufferedContentGrid<G, N, S>
     @Override
     public void onSplit(List<G> others) {
 
+        auditInvalidate();
+        resetContentOrigins();
         long totalDucts = 0;
         for (G grid : others) {
+            grid.auditInvalidate();
+            grid.resetContentOrigins();
             totalDucts = saturatingAdd(totalDucts, grid.getDuctCountLong());
             grid.recalculateCapacity();
             grid.renderState.requestUpdate();
@@ -338,6 +474,8 @@ public abstract class BufferedContentGrid<G extends BufferedContentGrid<G, N, S>
     @Override
     public void deserializeNBT(HolderLookup.Provider provider, CompoundTag nbt) {
 
+        auditInvalidate();
+        resetContentOrigins();
         super.deserializeNBT(provider, nbt);
         recalculateCapacity();
         if (nbt.contains(TAG_STORAGE, CompoundTag.TAG_COMPOUND)) {

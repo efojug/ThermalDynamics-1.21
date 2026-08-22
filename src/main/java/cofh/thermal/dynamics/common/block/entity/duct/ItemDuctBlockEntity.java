@@ -142,7 +142,7 @@ public class ItemDuctBlockEntity extends DuctBlockEntity<ItemGrid, ItemGridNode>
     /**
      * Transfers a traveling item into the next duct as ordinary route progress. Unlike
      * {@link #removeTravelingItem}, no client removal is queued, and instead of a full snapshot the
-     * destination duct queues a lightweight positional heartbeat — the client already knows the
+     * destination duct queues a lightweight positional heartbeat - the client already knows the
      * path and only needs the authoritative route index. A full snapshot is still sent periodically
      * as a safety refresh for observers that missed earlier state.
      */

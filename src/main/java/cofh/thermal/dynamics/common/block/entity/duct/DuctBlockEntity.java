@@ -687,7 +687,7 @@ public abstract class DuctBlockEntity<G extends Grid<G, N>, N extends GridNode<G
         if (side == null || level == null || level.isClientSide() || connections[side.ordinal()] == DISABLED || getGrid() == null) {
             return null;
         }
-        return attachments[side.ordinal()].wrapGridCapability(capability, getGrid().getCapability(capability));
+        return attachments[side.ordinal()].wrapGridCapability(capability, getGrid().getExternalCapability(capability, getBlockPos().relative(side)));
     }
 
 }

@@ -182,6 +182,7 @@ public class ChemicalServoAttachment implements IRedstoneControllableAttachment,
         ChemicalStack remainder = grid.insertChemical(actual, Action.EXECUTE);
         if (!remainder.isEmpty()) {
             long parked = grid.getOverflowBuffer().add(remainder);
+            grid.auditNoteIn(parked);
             grid.noteOverflowParked();
             if (parked < remainder.getAmount()) {
                 ThermalDynamics.LOG.warn("Chemical overflow buffer rejected {}", remainder.getAmount() - parked);
